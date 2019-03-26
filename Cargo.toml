@@ -1,0 +1,11 @@
+[package]
+name = "guillotiere"
+version = "0.1.0"
+authors = ["Nicolas Silva <nical@fastmail.com>"]
+edition = "2018"
+
+[dependencies]
+euclid = "0.19.5"
+
+[features]
+checks = []
