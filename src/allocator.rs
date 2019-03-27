@@ -15,6 +15,7 @@ impl AllocIndex {
     fn is_some(self) -> bool { self != AllocIndex::NONE }
 }
 
+/// ID referring to an allocated rectangle.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AllocId(u32);
 
@@ -22,7 +23,7 @@ const GEN_MASK: u32 = 0xFF000000;
 const IDX_MASK: u32 = 0x00FFFFFF;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Orientation {
+enum Orientation {
     Vertical,
     Horizontal,
 }
@@ -46,7 +47,7 @@ pub enum NodeKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct Node {
+struct Node {
     parent: AllocIndex,
     next_sibbling: AllocIndex,
     prev_sibbling: AllocIndex,
@@ -55,6 +56,188 @@ pub struct Node {
     rect: DeviceIntRect,
 }
 
+/// A dynamic texture atlas allocator using the guillotine algorithm.
+///
+/// The guillotine algorithm is assisted by a data structure that keeps track of
+/// nighboring rectangles to provide fast deallocation and coalescing.
+///
+/// ## Goals
+///
+/// Coalescing free rectangles, in the context of dynamic atlas allocation can be
+/// prohibitively expensive under real-time constraints if the algorithm needs to
+/// visit a large amount of free rectangles to find merge candidates.
+///
+/// This implementation proposes a compromise with fast (constant time) search
+/// for merge candidates at the expense of some (constant time) bookeeping overhead
+/// when allocating and removing rectangles and imperfect defragmentation (see the
+/// "Limitations" section below.
+///
+/// The subdivision scheme uses the guillotine algorithm for its simplicity and CPU
+/// efficiency.
+///
+/// ## The data structure
+///
+/// We maintain a tree with allocated and free rectangles as leaf nodes and
+/// containers as non-leaf nodes.
+///
+/// The direct children of a Containers's form an ordered horizontal or vertical
+/// sequence of rectangles that cover exactly their parent container's area.
+///
+/// For example, a subdivision such as this one:
+///
+/// ```ascii
+/// +-----------+----------+---+---+--+---------+---+
+/// |           |          | C | D |E | F       | G |
+/// |           |          +---+---+--+---------+---+
+/// |     A     |    B     |                        |
+/// |           |          |           H            |
+/// |           |          |                        |
+/// +------+----+----------+-+----------------------+
+/// |      |        J        |                      |
+/// |  I   +-----------------+          L           |
+/// |      |        K        |                      |
+/// +------+-----------------+----------------------+
+/// ```
+///
+/// Would have a tree of the form:
+///
+/// ```ascii
+///
+///  Tree                | Layout
+/// ---------------------+------------
+///                      |
+///           #          |
+///           |          |
+///      +----+----+. . .|. vertical
+///      |         |     |
+///      #         #     |
+///      |         |     |
+///    +-+-+ . . +-+-+. .|. horizontal
+///    | | |     | | |   |
+///    A B #     I # L   |
+///        |       |     |
+///      +-+-+ . +-+-+. .|. vertical
+///      |   |   |   |   |
+///      #   h   J   K   |
+///      |               |
+///  +-+-+-+-+. . . . . .|. horizontal
+///  | | | | |           |
+///  c D E F G           |
+/// ```
+///
+/// Where container nodes are represented with "#".
+///
+/// Note that if a horizontal container is the direct child of another
+/// horizontal container, we can merge the two into a single horizontal
+/// sequence.
+/// We use this property to always keep the tree in its simplest form.
+/// In practice this means that the orientation of a container is always
+/// the opposite of the orientation of its parent, if any.
+///
+/// The goal of this data structure is to quickly find neighboring free
+/// rectangles that can be coalesced into fewer rectangles.
+/// This structure guarantees that two consecutive children of the same
+/// container, if both rectangles are free, can be coalesed into a single
+/// one.
+///
+/// An important thing to note about this tree structure is that we only
+/// use it to visit niieghbor and parent nodes. As a result we don't care
+/// about whether the tree is balanced, although flat sequences of children
+/// tend to offer more opportunity for coalescing than deeply nested structures
+/// Either way, the cost of finding potential merges is the same because
+/// each node stores the indices of their sibblings, and we never have to
+/// traverse any global list of free rectangle nodes.
+///
+/// ### Merging sibblings
+///
+/// As soon as two consecutive sibbling nodes are marked as "free", they are coalesced
+/// into a single node.
+///
+/// In the example below, we juct deallocated the rectangle `B`, which is a sibblig of
+/// `A` which is free and `C` which is still allocated. `A` and `B` are merged and this
+/// change is reflected on the tree as shown below:
+///
+/// ```ascii
+/// +---+---+---+         #               +-------+---+         #
+/// |   |   |///|         |               |       |///|         |
+/// | A | B |/C/|     +---+---+           | AB    |/C/|     +---+---+
+/// |   |   |///|     |       |           |       |///|     |       |
+/// +---+---+---+     #       D           +-------+---+     #       D
+/// | D         |     |            ->     | D         |     |
+/// |           |   +-+-+                 |           |   +-+-+
+/// |           |   | | |                 |           |   |   |
+/// +-----------+   A B C                 +-----------+   AB  C
+/// ```
+///
+/// ### Merging unique children with their parents
+///
+/// In the previous example `C` was an allocated slot. Let's now deallocate it:
+///
+/// ```ascii
+/// +-------+---+         #               +-----------+         #                 #
+/// |       |   |         |               |           |         |                 |
+/// | AB    | C |     +---+---+           | ABC       |     +---+---+         +---+---+
+/// |       |   |     |       |           |           |     |       |         |       |
+/// +-------+---+     #       D           +-----------+     #       D        ABC      D
+/// | D         |     |            ->     | D         |     |           ->
+/// |           |   +-+-+                 |           |     +
+/// |           |   |   |                 |           |     |
+/// +-----------+   AB  C                 +-----------+    ABC
+/// ```
+///
+/// Deallocating `C` allowed it to merge with the free rectangle `AB`, making the
+/// resulting node `ABC` the only child of its parent container. As a result the
+/// node `ABC` was lifted up the tree to replace its parent.
+///
+/// In this example, assuming `D` to also be a free rectangle, `ABC` and `D` would
+/// be immediately merged and the resulting node `ABCD`, also being only child of
+/// its parent container, would replace its parent, turning the tree into a single
+/// node `ABCD`.
+///
+/// ### Limitations
+///
+/// This strategy can miss some opportunities for coalescing free rectangles
+/// when the two sibbling containers are split exactly the same way.
+///
+/// For example:
+///
+/// ```ascii
+/// +---------+------+
+/// |    A    |  B   |
+/// |         |      |
+/// +---------+------+
+/// |    C    |  D   |
+/// |         |      |
+/// +---------+------+
+/// ```
+///
+/// Could be the result of either a vertical followed with two horizontal splits,
+/// or an horizontal then two vertical splits.
+///
+/// ```ascii
+///  Tree            | Layout             Tree            | Layout
+/// -----------------+------------       -----------------+------------
+///         #        |                           #        |
+///         |        |                           |        |
+///     +---+---+ . .|. Vertical             +---+---+ . .|. Horizontal
+///     |       |    |                       |       |    |
+///     #       #    |               or      #       #    |
+///     |       |    |                       |       |    |
+///   +-+-+ . +-+-+ .|. Horizontal         +-+-+ . +-+-+ .|. Vertical
+///   |   |   |   |  |                     |   |   |   |  |
+///   A   B   C   D  |                     A   C   B   D  |
+/// ```
+///
+/// In the former case A can't be merged with C nor B with D because they are not sibblings.
+///
+/// For a lot of workloads it is rather rare for two consecutive sibbling containers to be
+/// subdivided exactly the same way. In this situation losing the ability to merge rectangles
+/// that aren't under the same container is good compromise between the CPU cost of coalescing
+/// and the fragmentation of the atlas.
+///
+/// This algorithm is, hosever not the best solution for ver very "structured" grid-like
+/// subdivision patterns where the ability to merge across containers would have provided
+/// frequent defragmentation opportunities.
 pub struct AtlasAllocator {
     nodes: Vec<Node>,
     free_list: Vec<AllocIndex>,
@@ -63,16 +246,22 @@ pub struct AtlasAllocator {
     snap_size: i32,
 }
 
+// TODO: Use a better fitting function.
 fn fit(slot: &DeviceIntRect, size: &DeviceIntSize) -> bool {
     slot.size.width >= size.width && slot.size.height >= size.height
 }
 
 impl AtlasAllocator {
+
+    /// Create an atlas allocator.
     pub fn new(size: DeviceIntSize) -> Self {
         AtlasAllocator::with_snapping(size, 1)
     }
 
+    /// Create an atlas allocator that rounds out the allocated rectangles to multiples
+    /// of the provided value.
     pub fn with_snapping(size: DeviceIntSize, snap_size: i32) -> Self {
+        assert!(snap_size > 0);
         AtlasAllocator {
             nodes: vec![Node {
                 parent: AllocIndex::NONE,
@@ -89,6 +278,7 @@ impl AtlasAllocator {
         }
     }
 
+    /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: DeviceIntSize) -> Option<AllocId> {
 
         // Find a suitable free rect.
@@ -110,6 +300,43 @@ impl AtlasAllocator {
         assert_eq!(chosen_node.kind, NodeKind::Free);
 
         // Decide whether to split horizontally or vertically.
+        //
+        // If the chosen free rectangle is bigger than the requested size, we subdivide it
+        // into an allocated rectangle, a split rectange and a leftover rectange:
+        //
+        // +-----------+-------------+
+        // |///////////|             |
+        // |/allocated/|             |
+        // |///////////|             |
+        // +-----------+             |
+        // |                         |
+        // |          chosen         |
+        // |                         |
+        // +-------------------------+
+        //
+        // Will be split into either:
+        //
+        // +-----------+-------------+
+        // |///////////|             |
+        // |/allocated/|  leftover   |
+        // |///////////|             |
+        // +-----------+-------------+
+        // |                         |
+        // |          split          |
+        // |                         |
+        // +-------------------------+
+        //
+        // or:
+        //
+        // +-----------+-------------+
+        // |///////////|             |
+        // |/allocated/|             |
+        // |///////////|    split    |
+        // +-----------+             |
+        // |           |             |
+        // | leftover  |             |
+        // |           |             |
+        // +-----------+-------------+
 
         let candidate_free_rect_to_right = DeviceIntRect {
             origin: chosen_node.rect.origin + vec2(requested_size.width, 0),
@@ -155,7 +382,7 @@ impl AtlasAllocator {
             orientation = Orientation::Vertical;
         }
 
-        // Update the tree
+        // Update the tree.
 
         let allocated_id;
         let split_id;
@@ -299,6 +526,7 @@ impl AtlasAllocator {
         Some(self.alloc_id(allocated_id))
     }
 
+    /// Deallocate a rectangle in the atlas.
     pub fn deallocate(&mut self, node_id: AllocId) {
         let mut node_id = self.get_index(node_id);
 
