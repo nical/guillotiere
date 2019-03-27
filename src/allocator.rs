@@ -72,8 +72,8 @@ struct Node {
 /// when allocating and removing rectangles and imperfect defragmentation (see the
 /// "Limitations" section below.
 ///
-/// The subdivision scheme uses the guillotine algorithm for its simplicity and CPU
-/// efficiency.
+/// The subdivision scheme uses the worst fit varriant of the guillotine algorithm
+/// for its simplicity and CPU efficiency.
 ///
 /// ## The data structure
 ///
@@ -246,11 +246,6 @@ pub struct AtlasAllocator {
     snap_size: i32,
 }
 
-// TODO: Use a better fitting function.
-fn fit(slot: &DeviceIntRect, size: &DeviceIntSize) -> bool {
-    slot.size.width >= size.width && slot.size.height >= size.height
-}
-
 impl AtlasAllocator {
 
     /// Create an atlas allocator.
@@ -281,6 +276,9 @@ impl AtlasAllocator {
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: DeviceIntSize) -> Option<AllocId> {
 
+        self.adjust_size(&mut requested_size.width);
+        self.adjust_size(&mut requested_size.height);
+
         // Find a suitable free rect.
         let chosen_id = self.find_suitable_rect(&requested_size);
 
@@ -291,9 +289,6 @@ impl AtlasAllocator {
             // No suitable free rect!
             return None;
         }
-
-        self.adjust_size(&mut requested_size.width);
-        self.adjust_size(&mut requested_size.height);
 
         let chosen_node = self.nodes[chosen_id.index()].clone();
         let current_orientation = chosen_node.orientation;
@@ -583,27 +578,48 @@ impl AtlasAllocator {
 
     fn find_suitable_rect(&mut self, requested_size: &DeviceIntSize) -> AllocIndex {
 
-        let mut i = 0;
-        while i < self.free_list.len() {
-            let id = self.free_list[i];
+        let mut candidate_score = 0;
+        let mut candidate = None;
+        let mut freelist_idx = 0;
+        while freelist_idx < self.free_list.len() {
+            let id = self.free_list[freelist_idx];
 
             // During tree simplification we don't remove merged nodes from the free list, so we have
             // to handle it here.
             // This is a tad awkward, but lets us avoid having to maintain a doubly linked list for
             // the free list (which would be needed to remove nodes during tree simplification).
-            let should_remove = self.nodes[id.index()].kind != NodeKind::Free;
-            let suitable = !should_remove && fit(&self.nodes[id.index()].rect, requested_size);
-
-            if should_remove || suitable {
+            if self.nodes[id.index()].kind != NodeKind::Free {
                 // remove the element from the free list
-                self.free_list.swap_remove(i);
-            } else {
-                i += 1;
+                self.free_list.swap_remove(freelist_idx);
+                continue;
             }
 
-            if suitable {
-                return id;
+            let size = self.nodes[id.index()].rect.size;
+            let dx = size.width - requested_size.width;
+            let dy = size.height - requested_size.height;
+
+            if dx >= 0 && dy >= 0 {
+                if dx == 0 || dy == 0 {
+                    // Perfect fit!
+                    candidate = Some((id, freelist_idx));
+                    //println!("perfect fit!");
+                    break;
+                }
+
+                // Favor the largest minimum dimmension.
+                let score = i32::min(dx, dy);
+                if score > candidate_score {
+                    candidate_score = score;
+                    candidate = Some((id, freelist_idx));
+                }
             }
+
+            freelist_idx += 1;
+        }
+
+        if let Some((id, freelist_idx)) = candidate {
+            self.free_list.swap_remove(freelist_idx);
+            return id;
         }
 
         AllocIndex::NONE
@@ -725,7 +741,7 @@ impl AtlasAllocator {
     }
 
     fn add_free_rect(&mut self, id: AllocIndex, _size: &DeviceIntSize) {
-        //println!("add free rect #{}", id);
+        //println!("add free rect #{:?}", id);
         // TODO: Separate small/medium /large free rect lists.
         debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
         self.free_list.push(id);
@@ -735,7 +751,7 @@ impl AtlasAllocator {
     fn merge_sibblings(&mut self, node: AllocIndex, next: AllocIndex, orientation: Orientation) {
         let r1 = self.nodes[node.index()].rect;
         let r2 = self.nodes[next.index()].rect;
-        //println!("merge {} #{} and {} #{}       {:?}", r1, node, r2, next, orientation);
+        //println!("merge {} #{:?} and {} #{:?}       {:?}", r1, node, r2, next, orientation);
         let merge_size = self.nodes[next.index()].rect.size;
         match orientation {
             Orientation::Horizontal => {
