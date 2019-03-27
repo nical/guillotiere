@@ -1,7 +1,7 @@
 
 mod allocator;
 
-pub use crate::allocator::{AtlasAllocator, AllocId};
+pub use crate::allocator::*;
 
 pub struct DeviceSpace;
 pub type DeviceIntRect = euclid::TypedRect<i32, DeviceSpace>;

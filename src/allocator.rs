@@ -311,6 +311,9 @@ pub struct AtlasAllocator {
 
     /// See `AllocatorOptions`.
     large_size_threshold: i32,
+
+    /// Total size of the atlas.
+    size: DeviceIntSize,
 }
 
 impl AtlasAllocator {
@@ -351,6 +354,7 @@ impl AtlasAllocator {
             snap_size: options.snap_size,
             small_size_threshold: options.small_size_threshold,
             large_size_threshold: options.large_size_threshold,
+            size,
         }
     }
 
@@ -896,6 +900,69 @@ impl AtlasAllocator {
     }
 }
 
+pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std::io::Result<()> {
+
+    write!(
+        output,
+r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   id="svg8"
+   version="1.1"
+   viewBox="0 0 {width} {height}"
+   width="{width}mm"
+   height="{height}mm"
+>
+  <defs
+     id="defs2" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g>
+"#,
+        width = atlas.size.width,
+        height = atlas.size.height,
+    )?;
+
+    for node in &atlas.nodes {
+        let style = match node.kind {
+            NodeKind::Free => {
+                "fill:rgb(200,255,200);stroke-width:1;stroke:rgb(0,0,0)"
+            }
+            NodeKind::Alloc => {
+                "fill:rgb(150,150,255);stroke-width:3;stroke:rgb(0,0,0)"
+            }
+            _ => { continue; }
+        };
+
+        let rect = node.rect;
+
+        writeln!(
+            output,
+            r#"    <rect x="{}" y="{}" width="{}" height="{}" style="{}" />"#,
+            rect.origin.x,
+            rect.origin.y,
+            rect.size.width,
+            rect.size.height,
+            style,
+        )?;
+    }
+
+    writeln!(output, "</g></svg>" )
+}
 
 #[test]
 fn atlas_simple() {
