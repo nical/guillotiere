@@ -3,6 +3,21 @@ use euclid::{size2, vec2};
 
 use std::num::Wrapping;
 
+const LARGE_BUCKET: usize = 2;
+const MEDIUM_BUCKET: usize = 1;
+const SMALL_BUCKET: usize = 0;
+const NUM_BUCKETS: usize = 3;
+
+fn free_list_for_size(small_threshold: i32, large_threshold: i32, size: &DeviceIntSize) -> usize {
+    if size.width >= large_threshold || size.height >= large_threshold {
+        LARGE_BUCKET
+    } else if size.width >= small_threshold || size.height >= small_threshold {
+        MEDIUM_BUCKET
+    } else {
+        SMALL_BUCKET
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct AllocIndex(u32);
 impl AllocIndex {
@@ -54,6 +69,43 @@ struct Node {
     kind: NodeKind,
     orientation: Orientation,
     rect: DeviceIntRect,
+}
+
+/// Options to tweak the behavior of the atlas allocator.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct AllocatorOptions {
+    /// Round the rectangle sizes up to a multiple of this value.
+    ///
+    /// This value must be superior to zero.
+    ///
+    /// Default value: 1,
+    pub snap_size: i32,
+
+    /// Value below which a size is considered small.
+    ///
+    /// This is value is used to speed up the storage and lookup of free rectangles.
+    /// This value must be inferior or equal to `large_size_threshold`
+    ///
+    /// Default value: 32,
+    pub small_size_threshold: i32,
+
+    /// Value above which a size is considered large.
+    ///
+    /// This is value is used to speed up the storage and lookup of free rectangles.
+    /// This value must be inferior or equal to `large_size_threshold`
+    ///
+    /// Default value: 256,
+    pub large_size_threshold: i32,
+}
+
+pub const DEFAULT_OPTIONS: AllocatorOptions = AllocatorOptions {
+    snap_size: 1,
+    large_size_threshold: 256,
+    small_size_threshold: 32,
+};
+
+impl Default for AllocatorOptions {
+    fn default() -> Self { DEFAULT_OPTIONS }
 }
 
 /// A dynamic texture atlas allocator using the guillotine algorithm.
@@ -235,28 +287,55 @@ struct Node {
 /// that aren't under the same container is good compromise between the CPU cost of coalescing
 /// and the fragmentation of the atlas.
 ///
-/// This algorithm is, hosever not the best solution for ver very "structured" grid-like
+/// This algorithm is, however, not the best solution for very "structured" grid-like
 /// subdivision patterns where the ability to merge across containers would have provided
 /// frequent defragmentation opportunities.
 pub struct AtlasAllocator {
     nodes: Vec<Node>,
-    free_list: Vec<AllocIndex>,
+    /// Free lists are split into a small a medium and a large bucket for faster lookups.
+    free_lists: [Vec<AllocIndex>; NUM_BUCKETS],
+
+    /// Index of the first element of an intrusive linked list of unused nodes.
+    /// The `next_sibbling` member of unused node serves as the linked list link.
     unused_nodes: AllocIndex,
+
+    /// We keep a per-node generation counter to reduce the lekelihood of ID reuse bugs
+    /// going unnoticed.
     generations: Vec<Wrapping<u8>>,
+
+    /// See `AllocatorOptions`.
     snap_size: i32,
+
+    /// See `AllocatorOptions`.
+    small_size_threshold: i32,
+
+    /// See `AllocatorOptions`.
+    large_size_threshold: i32,
 }
 
 impl AtlasAllocator {
 
     /// Create an atlas allocator.
     pub fn new(size: DeviceIntSize) -> Self {
-        AtlasAllocator::with_snapping(size, 1)
+        AtlasAllocator::with_options(size, &DEFAULT_OPTIONS)
     }
 
     /// Create an atlas allocator that rounds out the allocated rectangles to multiples
     /// of the provided value.
-    pub fn with_snapping(size: DeviceIntSize, snap_size: i32) -> Self {
-        assert!(snap_size > 0);
+    pub fn with_options(size: DeviceIntSize, options: &AllocatorOptions) -> Self {
+        assert!(options.snap_size > 0);
+        assert!(size.width > 0);
+        assert!(size.height > 0);
+        assert!(options.large_size_threshold >= options.small_size_threshold);
+
+        let mut free_lists = [Vec::new(), Vec::new(), Vec::new()];
+        let bucket = free_list_for_size(
+            options.small_size_threshold,
+            options.large_size_threshold,
+            &size
+        );
+        free_lists[bucket].push(AllocIndex(0));
+
         AtlasAllocator {
             nodes: vec![Node {
                 parent: AllocIndex::NONE,
@@ -266,10 +345,12 @@ impl AtlasAllocator {
                 kind: NodeKind::Free,
                 orientation: Orientation::Vertical,
             }],
-            free_list: vec![AllocIndex(0)],
+            free_lists,
             generations: vec![Wrapping(0)],
             unused_nodes: AllocIndex::NONE,
-            snap_size,
+            snap_size: options.snap_size,
+            small_size_threshold: options.small_size_threshold,
+            large_size_threshold: options.large_size_threshold,
         }
     }
 
@@ -581,45 +662,52 @@ impl AtlasAllocator {
         let mut candidate_score = 0;
         let mut candidate = None;
         let mut freelist_idx = 0;
-        while freelist_idx < self.free_list.len() {
-            let id = self.free_list[freelist_idx];
+        let smallest_bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            requested_size,
+        );
+        for bucket in smallest_bucket..NUM_BUCKETS {
+            while freelist_idx < self.free_lists[bucket].len() {
+                let id = self.free_lists[bucket][freelist_idx];
 
-            // During tree simplification we don't remove merged nodes from the free list, so we have
-            // to handle it here.
-            // This is a tad awkward, but lets us avoid having to maintain a doubly linked list for
-            // the free list (which would be needed to remove nodes during tree simplification).
-            if self.nodes[id.index()].kind != NodeKind::Free {
-                // remove the element from the free list
-                self.free_list.swap_remove(freelist_idx);
-                continue;
-            }
-
-            let size = self.nodes[id.index()].rect.size;
-            let dx = size.width - requested_size.width;
-            let dy = size.height - requested_size.height;
-
-            if dx >= 0 && dy >= 0 {
-                if dx == 0 || dy == 0 {
-                    // Perfect fit!
-                    candidate = Some((id, freelist_idx));
-                    //println!("perfect fit!");
-                    break;
+                // During tree simplification we don't remove merged nodes from the free list, so we have
+                // to handle it here.
+                // This is a tad awkward, but lets us avoid having to maintain a doubly linked list for
+                // the free list (which would be needed to remove nodes during tree simplification).
+                if self.nodes[id.index()].kind != NodeKind::Free {
+                    // remove the element from the free list
+                    self.free_lists[bucket].swap_remove(freelist_idx);
+                    continue;
                 }
 
-                // Favor the largest minimum dimmension.
-                let score = i32::min(dx, dy);
-                if score > candidate_score {
-                    candidate_score = score;
-                    candidate = Some((id, freelist_idx));
+                let size = self.nodes[id.index()].rect.size;
+                let dx = size.width - requested_size.width;
+                let dy = size.height - requested_size.height;
+
+                if dx >= 0 && dy >= 0 {
+                    if dx == 0 || dy == 0 {
+                        // Perfect fit!
+                        candidate = Some((id, freelist_idx));
+                        //println!("perfect fit!");
+                        break;
+                    }
+
+                    // Favor the largest minimum dimmension.
+                    let score = i32::min(dx, dy);
+                    if score > candidate_score {
+                        candidate_score = score;
+                        candidate = Some((id, freelist_idx));
+                    }
                 }
+
+                freelist_idx += 1;
             }
 
-            freelist_idx += 1;
-        }
-
-        if let Some((id, freelist_idx)) = candidate {
-            self.free_list.swap_remove(freelist_idx);
-            return id;
+            if let Some((id, freelist_idx)) = candidate {
+                self.free_lists[bucket].swap_remove(freelist_idx);
+                return id;
+            }
         }
 
         AllocIndex::NONE
@@ -663,7 +751,20 @@ impl AtlasAllocator {
 
     #[allow(dead_code)]
     fn print_free_rects(&self) {
-        for &id in &self.free_list {
+        println!("Large:");
+        for &id in &self.free_lists[LARGE_BUCKET] {
+            if self.nodes[id.index()].kind == NodeKind::Free {
+                println!(" - {} #{:?}", self.nodes[id.index()].rect, id);
+            }
+        }
+        println!("Medium:");
+        for &id in &self.free_lists[MEDIUM_BUCKET] {
+            if self.nodes[id.index()].kind == NodeKind::Free {
+                println!(" - {} #{:?}", self.nodes[id.index()].rect, id);
+            }
+        }
+        println!("Small:");
+        for &id in &self.free_lists[SMALL_BUCKET] {
             if self.nodes[id.index()].kind == NodeKind::Free {
                 println!(" - {} #{:?}", self.nodes[id.index()].rect, id);
             }
@@ -740,11 +841,15 @@ impl AtlasAllocator {
         }
     }
 
-    fn add_free_rect(&mut self, id: AllocIndex, _size: &DeviceIntSize) {
+    fn add_free_rect(&mut self, id: AllocIndex, size: &DeviceIntSize) {
         //println!("add free rect #{:?}", id);
-        // TODO: Separate small/medium /large free rect lists.
         debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
-        self.free_list.push(id);
+        let bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            size,
+        );
+        self.free_lists[bucket].push(id);
     }
 
     // Merge `next` into `node` and append `next` to a list of available `nodes`vector slots.
@@ -828,7 +933,13 @@ fn atlas_simple() {
 
 #[test]
 fn atlas_random_test() {
-    let mut atlas = AtlasAllocator::with_snapping(size2(1000, 1000), 5);
+    let mut atlas = AtlasAllocator::with_options(
+        size2(1000, 1000),
+        &AllocatorOptions {
+            snap_size: 5,
+            ..DEFAULT_OPTIONS
+        }
+    );
 
     let a = 1103515245;
     let c = 12345;
@@ -873,7 +984,13 @@ fn atlas_random_test() {
     }
 
     println!("added/removed {} rectangles, {} misses", n, misses);
-    println!("nodes.cap: {}, free_list.cap: {}", atlas.nodes.capacity(), atlas.free_list.capacity());
+    println!(
+        "nodes.cap: {}, free_list.cap: {}/{}/{}",
+        atlas.nodes.capacity(),
+        atlas.free_lists[LARGE_BUCKET].capacity(),
+        atlas.free_lists[MEDIUM_BUCKET].capacity(),
+        atlas.free_lists[SMALL_BUCKET].capacity(),
+    );
 
     let full = atlas.allocate(size2(1000,1000)).unwrap();
     assert!(atlas.allocate(size2(1, 1)).is_none());
