@@ -18,6 +18,7 @@ fn free_list_for_size(small_threshold: i32, large_threshold: i32, size: &DeviceI
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct AllocIndex(u32);
 impl AllocIndex {
@@ -31,12 +32,14 @@ impl AllocIndex {
 }
 
 /// ID referring to an allocated rectangle.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AllocId(u32);
 
 const GEN_MASK: u32 = 0xFF000000;
 const IDX_MASK: u32 = 0x00FFFFFF;
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum Orientation {
     Vertical,
@@ -53,6 +56,7 @@ impl Orientation {
 }
 
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     Container,
@@ -61,6 +65,7 @@ pub enum NodeKind {
     Unused,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 struct Node {
     parent: AllocIndex,
@@ -71,6 +76,7 @@ struct Node {
     rect: DeviceIntRect,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to tweak the behavior of the atlas allocator.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AllocatorOptions {
@@ -290,6 +296,8 @@ impl Default for AllocatorOptions {
 /// This algorithm is, however, not the best solution for very "structured" grid-like
 /// subdivision patterns where the ability to merge across containers would have provided
 /// frequent defragmentation opportunities.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
 pub struct AtlasAllocator {
     nodes: Vec<Node>,
     /// Free lists are split into a small a medium and a large bucket for faster lookups.
