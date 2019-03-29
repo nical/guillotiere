@@ -207,7 +207,7 @@ fn main() {
 }
 
 fn read_atlas(args: &ArgMatches) -> Session {
-    let atlas_file_name = args.value_of("OUTPUT").unwrap_or("atlas.ron");
+    let atlas_file_name = args.value_of("ATLAS").unwrap_or("atlas.ron");
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -225,7 +225,7 @@ fn write_atlas(session: &Session, args: &ArgMatches) {
         ron::ser::PrettyConfig::default(),
     ).unwrap();
 
-    let atlas_file_name = args.value_of("OUTPUT").unwrap_or("atlas.ron");
+    let atlas_file_name = args.value_of("ATLAS").unwrap_or("atlas.ron");
     let mut atlas_file = std::fs::File::create(atlas_file_name).expect(
         "Failed to open the atlas file."
     );
