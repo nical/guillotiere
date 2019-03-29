@@ -42,6 +42,16 @@ This command Deallocates a rectangle of the specified name from the atlas.
 guillotiere deallocate foo
 ```
 
+### rearrange
+
+This command reallocates all rectangles to reduce fragmentation.
+The size can be optionally modiffed with `-w <width>` and `-h <height>`
+
+```bash
+guillotiere rearrange
+```
+
+
 ### svg
 
 This command generates an SVG file of the atlas. Green rectangles are free and
@@ -56,6 +66,14 @@ To specify the path of the SVG file:
 
 ```bash
 guillotiere svg path/to/file.svg
+```
+
+### list
+
+This command dumps a list od the allocated and free rectangles in stdout.
+
+```bash
+guillotiere list
 ```
 
 ### More options
