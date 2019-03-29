@@ -1,4 +1,4 @@
-use crate::{DeviceIntRect, DeviceIntSize};
+use crate::{DeviceIntRect, DeviceIntPoint, DeviceIntSize};
 use euclid::{size2, vec2};
 
 use std::num::Wrapping;
@@ -367,7 +367,7 @@ impl AtlasAllocator {
     }
 
     /// Allocate a rectangle in the atlas.
-    pub fn allocate(&mut self, mut requested_size: DeviceIntSize) -> Option<AllocId> {
+    pub fn allocate(&mut self, mut requested_size: DeviceIntSize) -> Option<(AllocId, DeviceIntPoint)> {
 
         self.adjust_size(&mut requested_size.width);
         self.adjust_size(&mut requested_size.height);
@@ -611,7 +611,7 @@ impl AtlasAllocator {
         #[cfg(feature = "checks")]
         self.check_tree();
 
-        Some(self.alloc_id(allocated_id))
+        Some((self.alloc_id(allocated_id), allocated_rect.origin))
     }
 
     /// Deallocate a rectangle in the atlas.
@@ -981,27 +981,27 @@ fn atlas_simple() {
 
     atlas.deallocate(full);
 
-    let a = atlas.allocate(size2(100, 1000)).unwrap();
-    let b = atlas.allocate(size2(900, 200)).unwrap();
-    let c = atlas.allocate(size2(300, 200)).unwrap();
-    let d = atlas.allocate(size2(200, 300)).unwrap();
-    let e = atlas.allocate(size2(100, 300)).unwrap();
-    let f = atlas.allocate(size2(100, 300)).unwrap();
-    let g = atlas.allocate(size2(100, 300)).unwrap();
+    let a = atlas.allocate(size2(100, 1000)).unwrap().0;
+    let b = atlas.allocate(size2(900, 200)).unwrap().0;
+    let c = atlas.allocate(size2(300, 200)).unwrap().0;
+    let d = atlas.allocate(size2(200, 300)).unwrap().0;
+    let e = atlas.allocate(size2(100, 300)).unwrap().0;
+    let f = atlas.allocate(size2(100, 300)).unwrap().0;
+    let g = atlas.allocate(size2(100, 300)).unwrap().0;
 
     atlas.deallocate(b);
     atlas.deallocate(f);
     atlas.deallocate(c);
     atlas.deallocate(e);
-    let h = atlas.allocate(size2(500, 200)).unwrap();
+    let h = atlas.allocate(size2(500, 200)).unwrap().0;
     atlas.deallocate(a);
-    let i = atlas.allocate(size2(500, 200)).unwrap();
+    let i = atlas.allocate(size2(500, 200)).unwrap().0;
     atlas.deallocate(g);
     atlas.deallocate(h);
     atlas.deallocate(d);
     atlas.deallocate(i);
 
-    let full = atlas.allocate(size2(1000,1000)).unwrap();
+    let full = atlas.allocate(size2(1000,1000)).unwrap().0;
     assert!(atlas.allocate(size2(1, 1)).is_none());
     atlas.deallocate(full);
 }
@@ -1045,7 +1045,7 @@ fn atlas_random_test() {
                 (rand() % 300) as i32 + 5,
             );
 
-            if let Some(id) = atlas.allocate(size) {
+            if let Some((id, _)) = atlas.allocate(size) {
                 allocated.push(id);
                 n += 1;
             } else {
@@ -1067,7 +1067,7 @@ fn atlas_random_test() {
         atlas.free_lists[SMALL_BUCKET].capacity(),
     );
 
-    let full = atlas.allocate(size2(1000,1000)).unwrap();
+    let full = atlas.allocate(size2(1000,1000)).unwrap().0;
     assert!(atlas.allocate(size2(1, 1)).is_none());
     atlas.deallocate(full);
 }
