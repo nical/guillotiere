@@ -740,17 +740,44 @@ impl AtlasAllocator {
         }
     }
 
+    /// Invoke a callback for each free rectangle in the atlas.
+    pub fn for_each_free_rect<F>(&self, mut callback: F)
+    where F: FnMut(&DeviceIntRect) {
+        for node in &self.nodes {
+            if node.kind == NodeKind::Free {
+                callback(&node.rect);
+            }
+        }
+    }
+
+    /// Invoke a callback for each allocated rectangle in the atlas.
+    pub fn for_each_allocated_rect<F>(&self, mut callback: F)
+    where F: FnMut(AllocId, &DeviceIntRect) {
+        for (i, node) in self.nodes.iter().enumerate() {
+            if node.kind != NodeKind::Alloc {
+                continue;
+            }
+
+            let id = self.alloc_id(AllocIndex(i as u32));
+
+            callback(id, &node.rect);
+        }
+    }
+
     fn find_suitable_rect(&mut self, requested_size: &DeviceIntSize) -> AllocIndex {
 
-        let mut candidate_score = 0;
-        let mut candidate = None;
-        let mut freelist_idx = 0;
-        let smallest_bucket = free_list_for_size(
+        let ideal_bucket = free_list_for_size(
             self.small_size_threshold,
             self.large_size_threshold,
             requested_size,
         );
-        for bucket in smallest_bucket..NUM_BUCKETS {
+
+        let use_worst_fit = ideal_bucket != SMALL_BUCKET;
+        let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
+        let mut candidate = None;
+
+        for bucket in ideal_bucket..NUM_BUCKETS {
+            let mut freelist_idx = 0;
             while freelist_idx < self.free_lists[bucket].len() {
                 let id = self.free_lists[bucket][freelist_idx];
 
@@ -776,9 +803,11 @@ impl AtlasAllocator {
                         break;
                     }
 
-                    // Favor the largest minimum dimmension.
+                    // Favor the largest minimum dimmension, except for small
+                    // allocations.
                     let score = i32::min(dx, dy);
-                    if score > candidate_score {
+                    if (use_worst_fit && score > candidate_score)
+                        || (!use_worst_fit && score < candidate_score) {
                         candidate_score = score;
                         candidate = Some((id, freelist_idx));
                     }
@@ -925,13 +954,13 @@ impl AtlasAllocator {
     }
 
     fn add_free_rect(&mut self, id: AllocIndex, size: &DeviceIntSize) {
-        //println!("add free rect #{:?}", id);
         debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
         let bucket = free_list_for_size(
             self.small_size_threshold,
             self.large_size_threshold,
             size,
         );
+        //println!("add free rect #{:?} size {} bucket {}", id, size, bucket);
         self.free_lists[bucket].push(id);
     }
 

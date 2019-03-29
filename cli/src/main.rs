@@ -191,6 +191,17 @@ fn main() {
                 .required(false)
             )
         )
+        .subcommand(
+            SubCommand::with_name("list")
+            .about("List the allocations and free rectangles in the atlas")
+            .arg(Arg::with_name("ATLAS")
+                .short("-a")
+                .long("atlas")
+                .help("Input texture atlas file.")
+                .value_name("ATLAS")
+                .takes_value(true)
+             )
+        )
         .get_matches();
 
     if let Some(cmd) = matches.subcommand_matches("init") {
@@ -203,6 +214,8 @@ fn main() {
         rearrange(&cmd);
     } else if let Some(cmd) = matches.subcommand_matches("svg") {
         svg(&cmd);
+    } else if let Some(cmd) = matches.subcommand_matches("list") {
+        list(&cmd);
     }
 }
 
@@ -355,7 +368,6 @@ fn rearrange(args: &ArgMatches) {
     }
 }
 
-
 fn svg(args: &ArgMatches) {
     let session = read_atlas(args);
 
@@ -367,5 +379,33 @@ fn svg(args: &ArgMatches) {
     guillotiere::dump_svg(&session.atlas, &mut svg_file).expect(
         "Failed to write into the SVG file."
     );
+}
+
+fn list(args: &ArgMatches) {
+    let session = read_atlas(args);
+
+    println!("# Allocated rectangles");
+    session.atlas.for_each_allocated_rect(|id, rect| {
+        for (name, &id2) in &session.names {
+            if id2 != id {
+                continue;
+            }
+
+            println!(
+                " - {}: size {}x{} at origin [{}, {}]",
+                name, rect.size.width, rect.size.height, rect.origin.x, rect.origin.y
+            );
+
+            break;
+        }
+    });
+
+    println!("# Free rectangles");
+    session.atlas.for_each_free_rect(|rect| {
+        println!(
+            " - size {}x{} at origin [{}, {}]",
+            rect.size.width, rect.size.height, rect.origin.x, rect.origin.y
+        );
+    });
 }
 
