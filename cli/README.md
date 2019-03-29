@@ -7,6 +7,8 @@ file and can be dumped as an SVG for visualization.
 
 ## Commands
 
+If running guillotiere with cargo, replace `guillotiere` with `cargo run --` in all of the examples below.
+
 ### init
 
 ```bash
@@ -53,13 +55,12 @@ guillotiere svg
 To specify the path of the SVG file:
 
 ```bash
-# Writes into ./atlas.svg by default.
 guillotiere svg path/to/file.svg
 ```
 
 ### More options
 
-- All of the commands allow specifying the atlas file with the `-a`/`--atlas` option.
+- All of the commands allow specifying the atlas file with the `-a`/`--atlas` option. By default, the atlas is read/written into `./atlas.ron`.
 - Most commands allow generating an SVG file directly using the `--svg <FILE>` option.
 
 Example:
@@ -69,5 +70,4 @@ guillotiere allocate 100 200 --atlas myatlas.ron --svg atlas.svg
 ```
 
 See `guillotiere --help` and `guillotiere <command> --help` for the other options available.
-
 
