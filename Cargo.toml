@@ -3,6 +3,8 @@ name = "guillotiere"
 version = "0.1.0"
 authors = ["Nicolas Silva <nical@fastmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "A dynamic 2D texture atlas allocator with fast deallocation."
 
 [features]
 checks = []

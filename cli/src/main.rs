@@ -140,6 +140,41 @@ fn main() {
             )
         )
         .subcommand(
+            SubCommand::with_name("rearrange")
+            .about("Rearrange the allocations to reduce fragmentation.")
+            .arg(Arg::with_name("ATLAS")
+                .short("a")
+                .long("atlas")
+                .help("Sets the output file to use")
+                .value_name("FILE")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("WIDTH")
+                .short("w")
+                .long("width")
+                .help("Change the width")
+                .value_name("WIDTH")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("HEIGHT")
+                .short("h")
+                .long("height")
+                .help("Change the height")
+                .value_name("HEIGHT")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("SVG_OUTPUT")
+                .long("svg")
+                .help("Dump the atlas in an SVG file")
+                .value_name("SVG_OUTPUT")
+                .takes_value(true)
+                .required(false)
+            )
+        )
+        .subcommand(
             SubCommand::with_name("svg")
             .about("Dump the atlas as SVG")
             .arg(Arg::with_name("ATLAS")
@@ -164,6 +199,8 @@ fn main() {
         allocate(&cmd);
     } else if let Some(cmd) = matches.subcommand_matches("deallocate") {
         deallocate(&cmd);
+    } else if let Some(cmd) = matches.subcommand_matches("rearrange") {
+        rearrange(&cmd);
     } else if let Some(cmd) = matches.subcommand_matches("svg") {
         svg(&cmd);
     }
@@ -276,6 +313,48 @@ fn deallocate(args: &ArgMatches) {
         svg(args);
     }
 }
+
+fn rearrange(args: &ArgMatches) {
+    let mut session = read_atlas(args);
+    let size = session.atlas.size();
+
+    let w = args.value_of("WIDTH").map(|s| s.parse::<i32>().unwrap()).unwrap_or(size.width);
+    let h = args.value_of("HEIGHT").map(|s| s.parse::<i32>().unwrap()).unwrap_or(size.height);
+
+    let result = session.atlas.resize_and_rearrange(size2(w, h));
+
+    let mut new_names = std::collections::HashMap::default();
+
+    for change in &result.changes {
+        for (name, &id) in &session.names {
+            if id != change.old.id {
+                continue;
+            }
+            println!(" - Moved {}: {} -> {}", name, change.old.rect, change.new.rect);
+            new_names.insert(name.clone(), change.new.id);
+            break;
+        }
+    }
+
+    for fail in &result.failures {
+        for (name, &id) in &session.names {
+            if id != fail.id {
+                continue;
+            }
+            println!(" - Failed to reallocate {}", name);
+            break;
+        }
+    }
+
+    session.names = new_names;
+
+    write_atlas(&session, args);
+
+    if args.is_present("SVG_OUTPUT") {
+        svg(args);
+    }
+}
+
 
 fn svg(args: &ArgMatches) {
     let session = read_atlas(args);

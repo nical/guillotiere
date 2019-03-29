@@ -366,6 +366,11 @@ impl AtlasAllocator {
         }
     }
 
+    /// The total size of the atlas.
+    pub fn size(&self) -> DeviceIntSize {
+        self.size
+    }
+
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: DeviceIntSize) -> Option<(AllocId, DeviceIntPoint)> {
 
@@ -669,6 +674,72 @@ impl AtlasAllocator {
         self.check_tree();
     }
 
+    pub fn rearrange(&mut self) -> ChangeList {
+        let size = self.size;
+        self.resize_and_rearrange(size)
+    }
+
+    pub fn resize_and_rearrange(&mut self, new_size: DeviceIntSize) -> ChangeList {
+        let mut allocs = Vec::with_capacity(self.nodes.len());
+        for (i, node) in self.nodes.iter().enumerate() {
+            if node.kind != NodeKind::Alloc {
+                continue;
+            }
+            let id = self.alloc_id(AllocIndex(i as u32));
+            allocs.push(Allocation { id, rect: node.rect });
+        }
+
+        allocs.sort_by_key(|alloc| alloc.rect.size.area());
+        allocs.reverse();
+
+        self.nodes.clear();
+        self.generations.clear();
+        self.unused_nodes = AllocIndex::NONE;
+        for i in 0..NUM_BUCKETS {
+            self.free_lists[i].clear();
+        }
+
+        let bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            &new_size
+        );
+        self.free_lists[bucket].push(AllocIndex(0));
+
+        self.nodes.push(Node {
+            parent: AllocIndex::NONE,
+            next_sibbling: AllocIndex::NONE,
+            prev_sibbling: AllocIndex::NONE,
+            rect: new_size.into(),
+            kind: NodeKind::Free,
+            orientation: Orientation::Vertical,
+        });
+        self.generations.push(Wrapping(0));
+
+        let mut changes = Vec::new();
+        let mut failures = Vec::new();
+
+        for old in allocs {
+            let size = old.rect.size;
+            if let Some((id, origin)) = self.allocate(size) {
+                changes.push(Change {
+                    old,
+                    new: Allocation {
+                        id,
+                        rect: DeviceIntRect { origin, size },
+                    }
+                });
+            } else {
+                failures.push(old);
+            }
+        }
+
+        ChangeList {
+            changes,
+            failures,
+        }
+    }
+
     fn find_suitable_rect(&mut self, requested_size: &DeviceIntSize) -> AllocIndex {
 
         let mut candidate_score = 0;
@@ -906,6 +977,21 @@ impl AtlasAllocator {
         assert_eq!(id.0 & GEN_MASK, expected_generation);
         AllocIndex(idx)
     }
+}
+
+pub struct Allocation {
+    pub id: AllocId,
+    pub rect: DeviceIntRect,
+}
+
+pub struct Change {
+    pub old: Allocation,
+    pub new: Allocation,
+}
+
+pub struct ChangeList {
+    pub changes: Vec<Change>,
+    pub failures: Vec<Allocation>,
 }
 
 pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std::io::Result<()> {
