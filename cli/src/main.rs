@@ -294,16 +294,16 @@ fn allocate(args: &ArgMatches) {
         return;
     }
 
-    let (id, origin) = alloc.unwrap();
+    let alloc = alloc.unwrap();
 
     let name = args.value_of("NAME").map(|name| name.to_string()).unwrap_or_else(|| {
         session.next_id += 1;
         format!("#{}", session.next_id)
     });
 
-    println!("Allocated rectangle {} of size {}x{} at origin [{}, {}]", name, w, h, origin.x, origin.y);
+    println!("Allocated rectangle {} of size {}x{} at origin [{}, {}]", name, w, h, alloc.rectangle.min.x, alloc.rectangle.min.y);
 
-    session.names.insert(name, id);
+    session.names.insert(name, alloc.id);
 
     write_atlas(&session, args);
 
@@ -343,7 +343,7 @@ fn rearrange(args: &ArgMatches) {
             if id != change.old.id {
                 continue;
             }
-            println!(" - Moved {}: {} -> {}", name, change.old.rect, change.new.rect);
+            println!(" - Moved {}: {} -> {}", name, change.old.rectangle, change.new.rectangle);
             new_names.insert(name.clone(), change.new.id);
             break;
         }
@@ -385,7 +385,7 @@ fn list(args: &ArgMatches) {
     let session = read_atlas(args);
 
     println!("# Allocated rectangles");
-    session.atlas.for_each_allocated_rect(|id, rect| {
+    session.atlas.for_each_allocated_rectangle(|id, rect| {
         for (name, &id2) in &session.names {
             if id2 != id {
                 continue;
@@ -401,7 +401,7 @@ fn list(args: &ArgMatches) {
     });
 
     println!("# Free rectangles");
-    session.atlas.for_each_free_rect(|rect| {
+    session.atlas.for_each_free_rectangle(|rect| {
         println!(
             " - size {}x{} at origin [{}, {}]",
             rect.size().width, rect.size().height, rect.min.x, rect.min.y
