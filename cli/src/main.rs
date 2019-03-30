@@ -393,7 +393,7 @@ fn list(args: &ArgMatches) {
 
             println!(
                 " - {}: size {}x{} at origin [{}, {}]",
-                name, rect.size.width, rect.size.height, rect.origin.x, rect.origin.y
+                name, rect.size().width, rect.size().height, rect.min.x, rect.min.y
             );
 
             break;
@@ -404,7 +404,7 @@ fn list(args: &ArgMatches) {
     session.atlas.for_each_free_rect(|rect| {
         println!(
             " - size {}x{} at origin [{}, {}]",
-            rect.size.width, rect.size.height, rect.origin.x, rect.origin.y
+            rect.size().width, rect.size().height, rect.min.x, rect.min.y
         );
     });
 }

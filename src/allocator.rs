@@ -1,5 +1,7 @@
-use crate::{DeviceIntRect, DeviceIntPoint, DeviceIntSize};
-use euclid::{size2, vec2};
+use crate::{Rectangle, Point, Size};
+use euclid::{point2, vec2};
+#[cfg(test)]
+use euclid::size2;
 
 use std::num::Wrapping;
 
@@ -8,7 +10,7 @@ const MEDIUM_BUCKET: usize = 1;
 const SMALL_BUCKET: usize = 0;
 const NUM_BUCKETS: usize = 3;
 
-fn free_list_for_size(small_threshold: i32, large_threshold: i32, size: &DeviceIntSize) -> usize {
+fn free_list_for_size(small_threshold: i32, large_threshold: i32, size: &Size) -> usize {
     if size.width >= large_threshold || size.height >= large_threshold {
         LARGE_BUCKET
     } else if size.width >= small_threshold || size.height >= small_threshold {
@@ -73,7 +75,7 @@ struct Node {
     prev_sibbling: AllocIndex,
     kind: NodeKind,
     orientation: Orientation,
-    rect: DeviceIntRect,
+    rect: Rectangle,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -321,19 +323,19 @@ pub struct AtlasAllocator {
     large_size_threshold: i32,
 
     /// Total size of the atlas.
-    size: DeviceIntSize,
+    size: Size,
 }
 
 impl AtlasAllocator {
 
     /// Create an atlas allocator.
-    pub fn new(size: DeviceIntSize) -> Self {
+    pub fn new(size: Size) -> Self {
         AtlasAllocator::with_options(size, &DEFAULT_OPTIONS)
     }
 
     /// Create an atlas allocator that rounds out the allocated rectangles to multiples
     /// of the provided value.
-    pub fn with_options(size: DeviceIntSize, options: &AllocatorOptions) -> Self {
+    pub fn with_options(size: Size, options: &AllocatorOptions) -> Self {
         assert!(options.snap_size > 0);
         assert!(size.width > 0);
         assert!(size.height > 0);
@@ -367,12 +369,12 @@ impl AtlasAllocator {
     }
 
     /// The total size of the atlas.
-    pub fn size(&self) -> DeviceIntSize {
+    pub fn size(&self) -> Size {
         self.size
     }
 
     /// Allocate a rectangle in the atlas.
-    pub fn allocate(&mut self, mut requested_size: DeviceIntSize) -> Option<(AllocId, DeviceIntPoint)> {
+    pub fn allocate(&mut self, mut requested_size: Size) -> Option<(AllocId, Point)> {
 
         self.adjust_size(&mut requested_size.width);
         self.adjust_size(&mut requested_size.height);
@@ -395,7 +397,7 @@ impl AtlasAllocator {
         // Decide whether to split horizontally or vertically.
         //
         // If the chosen free rectangle is bigger than the requested size, we subdivide it
-        // into an allocated rectangle, a split rectange and a leftover rectange:
+        // into an allocated rectangle, a split rectangle and a leftover rectangle:
         //
         // +-----------+-------------+
         // |///////////|             |
@@ -431,46 +433,40 @@ impl AtlasAllocator {
         // |           |             |
         // +-----------+-------------+
 
-        let candidate_free_rect_to_right = DeviceIntRect {
-            origin: chosen_node.rect.origin + vec2(requested_size.width, 0),
-            size: size2(
-                chosen_node.rect.size.width - requested_size.width,
-                requested_size.height,
-            ),
+        let candidate_free_rect_to_right = Rectangle {
+            min: chosen_node.rect.min + vec2(requested_size.width, 0),
+            max: point2(chosen_node.rect.max.x, chosen_node.rect.min.y + requested_size.height),
         };
-        let candidate_free_rect_to_bottom = DeviceIntRect {
-            origin: chosen_node.rect.origin + vec2(0, requested_size.height),
-            size: size2(
-                requested_size.width,
-                chosen_node.rect.size.height - requested_size.height,
-            ),
+        let candidate_free_rect_to_bottom = Rectangle {
+            min: chosen_node.rect.min + vec2(0, requested_size.height),
+            max: point2(chosen_node.rect.min.x + requested_size.width, chosen_node.rect.max.y),
         };
 
-        let allocated_rect = DeviceIntRect {
-            origin: chosen_node.rect.origin,
-            size: requested_size,
+        let allocated_rect = Rectangle {
+            min: chosen_node.rect.min,
+            max: chosen_node.rect.min + requested_size.to_vector(),
         };
 
         let split_rect;
         let leftover_rect;
         let orientation;
-        if requested_size == chosen_node.rect.size {
+        if requested_size == chosen_node.rect.size() {
             // Perfect fit.
             orientation = current_orientation;
-            split_rect = DeviceIntRect::zero();
-            leftover_rect = DeviceIntRect::zero();
-        } else if candidate_free_rect_to_right.size.area() > candidate_free_rect_to_bottom.size.area() {
+            split_rect = Rectangle::zero();
+            leftover_rect = Rectangle::zero();
+        } else if candidate_free_rect_to_right.size().area() > candidate_free_rect_to_bottom.size().area() {
             leftover_rect = candidate_free_rect_to_bottom;
-            split_rect = DeviceIntRect {
-                origin: candidate_free_rect_to_right.origin,
-                size: size2(candidate_free_rect_to_right.size.width, chosen_node.rect.size.height),
+            split_rect = Rectangle {
+                min: candidate_free_rect_to_right.min,
+                max: point2(candidate_free_rect_to_right.max.x, chosen_node.rect.max.y),
             };
             orientation = Orientation::Horizontal;
         } else {
             leftover_rect = candidate_free_rect_to_right;
-            split_rect = DeviceIntRect {
-                origin: candidate_free_rect_to_bottom.origin,
-                size: size2(chosen_node.rect.size.width, candidate_free_rect_to_bottom.size.height),
+            split_rect = Rectangle {
+                min: candidate_free_rect_to_bottom.min,
+                max: point2(chosen_node.rect.max.x, candidate_free_rect_to_bottom.max.y),
             };
             orientation = Orientation::Vertical;
         }
@@ -482,7 +478,7 @@ impl AtlasAllocator {
         let leftover_id;
         //println!("{:?} -> {:?}", current_orientation, orientation);
         if orientation == current_orientation {
-            if split_rect.size.area() > 0 {
+            if split_rect.size().area() > 0 {
                 let next_sibbling = chosen_node.next_sibbling;
 
                 split_id = self.new_node();
@@ -503,7 +499,7 @@ impl AtlasAllocator {
                 split_id = AllocIndex::NONE;
             }
 
-            if leftover_rect.size.area() > 0 {
+            if leftover_rect.size().area() > 0 {
                 self.nodes[chosen_id.index()].kind = NodeKind::Container;
 
                 allocated_id = self.new_node();
@@ -538,7 +534,7 @@ impl AtlasAllocator {
         } else {
             self.nodes[chosen_id.index()].kind = NodeKind::Container;
 
-            if split_rect.size.area() > 0 {
+            if split_rect.size().area() > 0 {
                 split_id = self.new_node();
                 self.nodes[split_id.index()] = Node {
                     parent: chosen_id,
@@ -552,13 +548,13 @@ impl AtlasAllocator {
                 split_id = AllocIndex::NONE;
             }
 
-            if leftover_rect.size.area() > 0 {
+            if leftover_rect.size().area() > 0 {
                 let container_id = self.new_node();
                 self.nodes[container_id.index()] = Node {
                     parent: chosen_id,
                     next_sibbling: split_id,
                     prev_sibbling: AllocIndex::NONE,
-                    rect: DeviceIntRect::zero(),
+                    rect: Rectangle::zero(),
                     kind: NodeKind::Container,
                     orientation: current_orientation.flipped(),
                 };
@@ -603,11 +599,11 @@ impl AtlasAllocator {
         }
 
         if split_id.is_some() {
-            self.add_free_rect(split_id, &split_rect.size);
+            self.add_free_rect(split_id, &split_rect.size());
         }
 
         if leftover_id.is_some() {
-            self.add_free_rect(leftover_id, &leftover_rect.size);
+            self.add_free_rect(leftover_id, &leftover_rect.size());
         }
 
         //println!("allocated {:?}     split: {:?} leftover: {:?}", allocated_rect, split_rect, leftover_rect);
@@ -616,7 +612,7 @@ impl AtlasAllocator {
         #[cfg(feature = "checks")]
         self.check_tree();
 
-        Some((self.alloc_id(allocated_id), allocated_rect.origin))
+        Some((self.alloc_id(allocated_id), allocated_rect.min))
     }
 
     /// Deallocate a rectangle in the atlas.
@@ -664,7 +660,7 @@ impl AtlasAllocator {
                 node_id = parent;
             } else {
 
-                let size = self.nodes[node_id.index()].rect.size;
+                let size = self.nodes[node_id.index()].rect.size();
                 self.add_free_rect(node_id, &size);
                 break;
             }
@@ -679,7 +675,7 @@ impl AtlasAllocator {
         self.resize_and_rearrange(size)
     }
 
-    pub fn resize_and_rearrange(&mut self, new_size: DeviceIntSize) -> ChangeList {
+    pub fn resize_and_rearrange(&mut self, new_size: Size) -> ChangeList {
         let mut allocs = Vec::with_capacity(self.nodes.len());
         for (i, node) in self.nodes.iter().enumerate() {
             if node.kind != NodeKind::Alloc {
@@ -689,7 +685,7 @@ impl AtlasAllocator {
             allocs.push(Allocation { id, rect: node.rect });
         }
 
-        allocs.sort_by_key(|alloc| alloc.rect.size.area());
+        allocs.sort_by_key(|alloc| alloc.rect.size().area());
         allocs.reverse();
 
         self.nodes.clear();
@@ -720,13 +716,13 @@ impl AtlasAllocator {
         let mut failures = Vec::new();
 
         for old in allocs {
-            let size = old.rect.size;
+            let size = old.rect.size();
             if let Some((id, origin)) = self.allocate(size) {
                 changes.push(Change {
                     old,
                     new: Allocation {
                         id,
-                        rect: DeviceIntRect { origin, size },
+                        rect: Rectangle { min: origin, max: origin + size.to_vector() },
                     }
                 });
             } else {
@@ -742,7 +738,7 @@ impl AtlasAllocator {
 
     /// Invoke a callback for each free rectangle in the atlas.
     pub fn for_each_free_rect<F>(&self, mut callback: F)
-    where F: FnMut(&DeviceIntRect) {
+    where F: FnMut(&Rectangle) {
         for node in &self.nodes {
             if node.kind == NodeKind::Free {
                 callback(&node.rect);
@@ -752,7 +748,7 @@ impl AtlasAllocator {
 
     /// Invoke a callback for each allocated rectangle in the atlas.
     pub fn for_each_allocated_rect<F>(&self, mut callback: F)
-    where F: FnMut(AllocId, &DeviceIntRect) {
+    where F: FnMut(AllocId, &Rectangle) {
         for (i, node) in self.nodes.iter().enumerate() {
             if node.kind != NodeKind::Alloc {
                 continue;
@@ -764,7 +760,7 @@ impl AtlasAllocator {
         }
     }
 
-    fn find_suitable_rect(&mut self, requested_size: &DeviceIntSize) -> AllocIndex {
+    fn find_suitable_rect(&mut self, requested_size: &Size) -> AllocIndex {
 
         let ideal_bucket = free_list_for_size(
             self.small_size_threshold,
@@ -791,7 +787,7 @@ impl AtlasAllocator {
                     continue;
                 }
 
-                let size = self.nodes[id.index()].rect.size;
+                let size = self.nodes[id.index()].rect.size();
                 let dx = size.width - requested_size.width;
                 let dy = size.height - requested_size.height;
 
@@ -837,7 +833,7 @@ impl AtlasAllocator {
             parent: AllocIndex::NONE,
             next_sibbling: AllocIndex::NONE,
             prev_sibbling: AllocIndex::NONE,
-            rect: DeviceIntRect::zero(),
+            rect: Rectangle::zero(),
             kind: NodeKind::Unused,
             orientation: Orientation::Horizontal,
         });
@@ -866,19 +862,19 @@ impl AtlasAllocator {
         println!("Large:");
         for &id in &self.free_lists[LARGE_BUCKET] {
             if self.nodes[id.index()].kind == NodeKind::Free {
-                println!(" - {} #{:?}", self.nodes[id.index()].rect, id);
+                println!(" - {:?} #{:?}", self.nodes[id.index()].rect, id);
             }
         }
         println!("Medium:");
         for &id in &self.free_lists[MEDIUM_BUCKET] {
             if self.nodes[id.index()].kind == NodeKind::Free {
-                println!(" - {} #{:?}", self.nodes[id.index()].rect, id);
+                println!(" - {:?} #{:?}", self.nodes[id.index()].rect, id);
             }
         }
         println!("Small:");
         for &id in &self.free_lists[SMALL_BUCKET] {
             if self.nodes[id.index()].kind == NodeKind::Free {
-                println!(" - {} #{:?}", self.nodes[id.index()].rect, id);
+                println!(" - {:?} #{:?}", self.nodes[id.index()].rect, id);
             }
         }
     }
@@ -890,7 +886,7 @@ impl AtlasAllocator {
         }
 
         if self.nodes[next.index()].prev_sibbling != id {
-            //println!("error: #{}'s next sibbling #{} has prev sibbling #{}", id, next, self.nodes[next.index()].prev_sibbling);
+            //println!("error: #{:?}'s next sibbling #{:?} has prev sibbling #{:?}", id, next, self.nodes[next.index()].prev_sibbling);
         }
         assert_eq!(self.nodes[next.index()].prev_sibbling, id);
 
@@ -911,12 +907,12 @@ impl AtlasAllocator {
         let r2 = self.nodes[next.index()].rect;
         match orientation {
             Orientation::Horizontal => {
-                assert_eq!(r1.min_y(), r2.min_y());
-                assert_eq!(r1.max_y(), r2.max_y());
+                assert_eq!(r1.min.y, r2.min.y);
+                assert_eq!(r1.max.y, r2.max.y);
             }
             Orientation::Vertical => {
-                assert_eq!(r1.min_x(), r2.min_x());
-                assert_eq!(r1.max_x(), r2.max_x());
+                assert_eq!(r1.min.x, r2.min.x);
+                assert_eq!(r1.max.x, r2.max.x);
             }
         }
     }
@@ -953,7 +949,7 @@ impl AtlasAllocator {
         }
     }
 
-    fn add_free_rect(&mut self, id: AllocIndex, size: &DeviceIntSize) {
+    fn add_free_rect(&mut self, id: AllocIndex, size: &Size) {
         debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
         let bucket = free_list_for_size(
             self.small_size_threshold,
@@ -969,17 +965,17 @@ impl AtlasAllocator {
         let r1 = self.nodes[node.index()].rect;
         let r2 = self.nodes[next.index()].rect;
         //println!("merge {} #{:?} and {} #{:?}       {:?}", r1, node, r2, next, orientation);
-        let merge_size = self.nodes[next.index()].rect.size;
+        let merge_size = self.nodes[next.index()].rect.size();
         match orientation {
             Orientation::Horizontal => {
-                assert_eq!(r1.min_y(), r2.min_y());
-                assert_eq!(r1.max_y(), r2.max_y());
-                self.nodes[node.index()].rect.size.width += merge_size.width;
+                assert_eq!(r1.min.y, r2.min.y);
+                assert_eq!(r1.max.y, r2.max.y);
+                self.nodes[node.index()].rect.max.x += merge_size.width;
             }
             Orientation::Vertical => {
-                assert_eq!(r1.min_x(), r2.min_x());
-                assert_eq!(r1.max_x(), r2.max_x());
-                self.nodes[node.index()].rect.size.height += merge_size.height;
+                assert_eq!(r1.min.x, r2.min.x);
+                assert_eq!(r1.max.x, r2.max.x);
+                self.nodes[node.index()].rect.max.y += merge_size.height;
             }
         }
 
@@ -1010,7 +1006,7 @@ impl AtlasAllocator {
 
 pub struct Allocation {
     pub id: AllocId,
-    pub rect: DeviceIntRect,
+    pub rect: Rectangle,
 }
 
 pub struct Change {
@@ -1076,10 +1072,10 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
         writeln!(
             output,
             r#"    <rect x="{}" y="{}" width="{}" height="{}" style="{}" />"#,
-            rect.origin.x,
-            rect.origin.y,
-            rect.size.width,
-            rect.size.height,
+            rect.min.x,
+            rect.min.y,
+            rect.size().width,
+            rect.size().height,
             style,
         )?;
     }
@@ -1091,7 +1087,7 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 fn atlas_simple() {
     let mut atlas = AtlasAllocator::new(size2(1000, 1000));
 
-    let full = atlas.allocate(size2(1000,1000)).unwrap();
+    let full = atlas.allocate(size2(1000,1000)).unwrap().0;
     assert!(atlas.allocate(size2(1, 1)).is_none());
 
     atlas.deallocate(full);

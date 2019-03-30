@@ -6,10 +6,9 @@ pub extern crate euclid;
 mod allocator;
 
 pub use crate::allocator::*;
+pub use euclid::{size2, point2};
 
-pub struct DeviceSpace;
-pub type DeviceIntRect = euclid::TypedRect<i32, DeviceSpace>;
-pub type DeviceIntPoint = euclid::TypedPoint2D<i32, DeviceSpace>;
-pub type DeviceIntSize = euclid::TypedSize2D<i32, DeviceSpace>;
-pub use euclid::size2;
+pub type Point = euclid::Point2D<i32>;
+pub type Size = euclid::Size2D<i32>;
+pub type Rectangle = euclid::Box2D<i32>;
 
