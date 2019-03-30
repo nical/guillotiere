@@ -1,10 +1,13 @@
 [package]
 name = "guillotiere"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Nicolas Silva <nical@fastmail.com>"]
 edition = "2018"
-license = "MIT"
+license = "MIT/Apache-2.0"
 description = "A dynamic 2D texture atlas allocator with fast deallocation."
+repository = "https://github.com/nical/guillotiere"
+documentation = "https://docs.rs/guillotiere/"
+keywords = ["2d", "graphics"]
 
 [features]
 checks = []
@@ -13,3 +16,6 @@ serialization = ["serde", "euclid/serde"]
 [dependencies]
 euclid = "0.19.5"
 serde = { version = "1.0", optional = true, features = ["serde_derive"] }
+
+[workspace]
+members = ["cli"]
