@@ -9,7 +9,7 @@ name = "guillotiere"
 path = "src/main.rs"
 
 [features]
-#checks = ["guillotiere/checks"]
+checks = ["guillotiere/checks"]
 
 [dependencies]
 guillotiere = { path = "../", features = ["serialization"] }
