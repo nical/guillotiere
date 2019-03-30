@@ -1065,10 +1065,10 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
     for node in &atlas.nodes {
         let style = match node.kind {
             NodeKind::Free => {
-                "fill:rgb(200,255,200);stroke-width:1;stroke:rgb(0,0,0)"
+                "fill:rgb(50,50,50);stroke-width:1;stroke:rgb(0,0,0)"
             }
             NodeKind::Alloc => {
-                "fill:rgb(150,150,255);stroke-width:3;stroke:rgb(0,0,0)"
+                "fill:rgb(50,70,180);stroke-width:1;stroke:rgb(0,0,0)"
             }
             _ => { continue; }
         };
