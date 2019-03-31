@@ -140,6 +140,37 @@ fn main() {
             )
         )
         .subcommand(
+            SubCommand::with_name("grow")
+            .about("Resize the atlas.")
+            .arg(Arg::with_name("ATLAS")
+                .short("a")
+                .long("atlas")
+                .help("Sets the output file to use")
+                .value_name("FILE")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("WIDTH")
+                .help("New width")
+                .value_name("WIDTH")
+                .takes_value(true)
+                .required(true)
+            )
+            .arg(Arg::with_name("HEIGHT")
+                .help("New height")
+                .value_name("HEIGHT")
+                .takes_value(true)
+                .required(true)
+            )
+            .arg(Arg::with_name("SVG_OUTPUT")
+                .long("svg")
+                .help("Dump the atlas in an SVG file")
+                .value_name("SVG_OUTPUT")
+                .takes_value(true)
+                .required(false)
+            )
+        )
+        .subcommand(
             SubCommand::with_name("rearrange")
             .about("Rearrange the allocations to reduce fragmentation.")
             .arg(Arg::with_name("ATLAS")
@@ -212,6 +243,8 @@ fn main() {
         deallocate(&cmd);
     } else if let Some(cmd) = matches.subcommand_matches("rearrange") {
         rearrange(&cmd);
+    } else if let Some(cmd) = matches.subcommand_matches("grow") {
+        grow(&cmd);
     } else if let Some(cmd) = matches.subcommand_matches("svg") {
         svg(&cmd);
     } else if let Some(cmd) = matches.subcommand_matches("list") {
@@ -360,6 +393,21 @@ fn rearrange(args: &ArgMatches) {
     }
 
     session.names = new_names;
+
+    write_atlas(&session, args);
+
+    if args.is_present("SVG_OUTPUT") {
+        svg(args);
+    }
+}
+
+fn grow(args: &ArgMatches) {
+    let mut session = read_atlas(args);
+
+    let w = args.value_of("WIDTH").unwrap().parse::<i32>().unwrap();
+    let h = args.value_of("HEIGHT").unwrap().parse::<i32>().unwrap();
+
+    session.atlas.grow(size2(w, h));
 
     write_atlas(&session, args);
 
