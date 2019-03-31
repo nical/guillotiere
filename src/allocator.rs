@@ -324,6 +324,8 @@ pub struct AtlasAllocator {
 
     /// Total size of the atlas.
     size: Size,
+
+    root_node: AllocIndex,
 }
 
 impl AtlasAllocator {
@@ -365,6 +367,7 @@ impl AtlasAllocator {
             small_size_threshold: options.small_size_threshold,
             large_size_threshold: options.large_size_threshold,
             size,
+            root_node: AllocIndex(0),
         }
     }
 
@@ -730,6 +733,135 @@ impl AtlasAllocator {
         ChangeList {
             changes,
             failures,
+        }
+    }
+
+    pub fn grow(&mut self, new_size: Size) {
+        assert!(new_size.width >= self.size.width);
+        assert!(new_size.height >= self.size.height);
+
+        let old_size = self.size;
+        self.size = new_size;
+
+        let dx = new_size.width - old_size.width;
+        let dy = new_size.height - old_size.height;
+
+        // If there is only one node and it is free, just grow it.
+        let root = &mut self.nodes[self.root_node.index()];
+        if root.kind == NodeKind::Free && root.rect.size() == old_size {
+            println!("just resize the root node");
+            root.rect.max = root.rect.min + new_size.to_vector();
+            return;
+        }
+
+        let root_orientation = root.orientation;
+        let grows_in_root_orientation = match root_orientation {
+            Orientation::Horizontal => dx > 0,
+            Orientation::Vertical => dy > 0,
+        };
+
+        // If growing along the orientation of the root node, find the right-or-bottom-most sibbling
+        // and either grow it (if it is free) or append a free node next.
+        if grows_in_root_orientation {
+            println!("grows in root orientation");
+            let mut sibbling = self.root_node;
+            while self.nodes[sibbling.index()].next_sibbling != AllocIndex::NONE {
+                sibbling = self.nodes[sibbling.index()].next_sibbling;
+            }
+            let node = &mut self.nodes[sibbling.index()];
+            if node.kind == NodeKind::Free {
+                println!("resize free node");
+                node.rect.max += match root_orientation {
+                    Orientation::Horizontal => vec2(dx, 0),
+                    Orientation::Vertical => vec2(0, dy),
+                };
+            } else {
+                println!("add free node");
+                let rect = match root_orientation {
+                    Orientation::Horizontal => {
+                        let min = point2(node.rect.max.x, node.rect.min.y);
+                        let max = min + vec2(dx, node.rect.size().height);
+                        Rectangle { min, max }
+                    }
+                    Orientation::Vertical => {
+                        let min = point2(node.rect.min.x, node.rect.max.y);
+                        let max = min + vec2(node.rect.size().width, dy);
+                        Rectangle { min, max }
+                    }
+                };
+
+                let next = self.new_node();
+                self.nodes[sibbling.index()].next_sibbling = next;
+                self.nodes[next.index()] = Node {
+                    kind: NodeKind::Free,
+                    rect,
+                    prev_sibbling: sibbling,
+                    next_sibbling: AllocIndex::NONE,
+                    parent: AllocIndex::NONE,
+                    orientation: root_orientation,
+                };
+
+                self.add_free_rect(next, &rect.size());
+            }
+        }
+
+        let grows_in_opposite_orientation = match root_orientation {
+            Orientation::Horizontal => dy > 0,
+            Orientation::Vertical => dx > 0,
+        };
+
+        if grows_in_opposite_orientation {
+            println!("grows in opposite orientation");
+            let free_node = self.new_node();
+            let new_root = self.new_node();
+
+            let old_root = self.root_node;
+            self.root_node = new_root;
+
+            let new_root_orientation = root_orientation.flipped();
+
+            let min = match new_root_orientation {
+                Orientation::Horizontal => point2(old_size.width, 0),
+                Orientation::Vertical => point2(0, old_size.height),
+            };
+            let max = point2(new_size.width, new_size.height);
+            let rect = Rectangle { min, max };
+
+            self.nodes[free_node.index()] = Node {
+                parent: new_root,
+                prev_sibbling: new_root,
+                next_sibbling: AllocIndex::NONE,
+                kind: NodeKind::Free,
+                rect,
+                orientation: new_root_orientation,
+            };
+
+            self.nodes[new_root.index()] = Node {
+                parent: AllocIndex::NONE,
+                prev_sibbling: AllocIndex::NONE,
+                next_sibbling: free_node,
+                kind: NodeKind::Container,
+                rect: Rectangle::zero(),
+                orientation: new_root_orientation,
+            };
+
+            self.add_free_rect(free_node, &rect.size());
+
+            // Update the nodes that need to be re-parented to the new-root.
+
+            let mut iter = old_root;
+            while iter != AllocIndex::NONE {
+                self.nodes[iter.index()].parent = new_root;
+                iter = self.nodes[iter.index()].next_sibbling;
+            }
+
+            // That second loop might not be necessary, I think that the root is always the first
+            // sibbling
+            let mut iter = self.nodes[old_root.index()].next_sibbling;
+            while iter != AllocIndex::NONE {
+                self.nodes[iter.index()].parent = new_root;
+                iter = self.nodes[iter.index()].prev_sibbling;
+            }
         }
     }
 
@@ -1189,4 +1321,29 @@ fn atlas_random_test() {
     atlas.deallocate(full);
 }
 
+#[test]
+fn test_grow() {
+    let mut atlas = AtlasAllocator::new(size2(1000, 1000));
+
+    atlas.grow(size2(2000, 2000));
+
+    let full = atlas.allocate(size2(2000, 2000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+    atlas.deallocate(full);
+
+    let a = atlas.allocate(size2(100, 100)).unwrap().id;
+
+    atlas.grow(size2(3000, 3000));
+
+    let b = atlas.allocate(size2(1000, 2900)).unwrap().id;
+
+    atlas.grow(size2(4000, 4000));
+
+    atlas.deallocate(b);
+    atlas.deallocate(a);
+
+    let full = atlas.allocate(size2(4000, 4000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+    atlas.deallocate(full);
+}
 
