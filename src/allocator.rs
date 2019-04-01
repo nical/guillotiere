@@ -328,6 +328,52 @@ pub struct AtlasAllocator {
     root_node: AllocIndex,
 }
 
+// Some notes about the atlas's tree data structure:
+//
+//      (AllocIndex::NONE)                (AllocIndex::NONE)
+//              ^                                 ^
+//              | parent                          | parent
+//           +---------+ next sibbling         +---------+ next sibbling
+// ... ------|Container|---------------------->|Free     |---> (AllocIndex::NONE)
+//     ----->|         |<----------------------|         |
+//           +---------+     previous sibbling +---------+
+//              ^ ^
+//              |  \____________________________
+//              |                               \
+//              | parent                         \ parent
+//           +---------+ next sibbling         +---------+ next sibbling
+// ... ------|Alloc    |---------------------->|container|---> (AllocIndex::NONE)
+//     ----->|         |<----------------------|         |
+//           +---------+     previous sibbling +---------+
+//                                               ^ ^ ^
+//                                              /  |  \
+//                                                ...
+//
+// - Nodes are stored in a contiguous vector.
+// - Links between the nodes are indices in the vector (AllocIndex), with a magic value
+//   AllocIndex::NONE that means no link.
+// - Nodes have a link to their parent, but parents do not have a link to any of its children because
+//   we never need to traverse the structure from parent to child.
+// - All nodes with the same parent are "sibblings". An intrusive linked list allows traversing sibblings
+//   in order. Consecutive sibblings share an edge and can be merged if they are both "free".
+// - There isn't necessarily a single root node. The top-most level of the tree can have several sibblings
+//   and their parent index is equal to AllocIndex::NONE. AtlasAllocator::root_node only needs to refer
+//   to one of these top-level nodes.
+// - After a rectangle has been deallocated, the slot for its node in the vector is not part of the
+//   tree anymore in the sense that no node from the tree points to it with its sibbling list or parent
+//   index. This unused node is available for reuse in a future allocation, and is placed in another
+//   linked list (also using AllocIndex), a singly linked list this time, which reuses the next_sibbling
+//   member of the node. So depending on whether the node kind is Unused or not, the next_sibbling
+//   member is used different things.
+// - We reuse nodes aggressively to avoid growing the vector whenever possible. This is important because
+//   the memory footprint of this data structure depends on the capacity of its vectors which don't
+//   get deallocated during the lifetime of the atlas.
+// - Because nodes are aggressively reused, the same node indices will come up often. To avoid id reuse
+//   bugs, a parallel vector of generation counters is maintained.
+// - The difference between AllocIndex and AllocId is that the latter embeds a generation ID to help
+//   finding id reuse bugs. AllocIndex however only contains the node offset. Internal links in the
+//   data structure use AllocIndex, and external users of the data structure only get to see AllocId.
+
 impl AtlasAllocator {
 
     /// Create an atlas allocator.
