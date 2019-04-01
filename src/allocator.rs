@@ -325,6 +325,7 @@ pub struct AtlasAllocator {
     /// Total size of the atlas.
     size: Size,
 
+    /// Index of one of the top-level nodes in the tree.
     root_node: AllocIndex,
 }
 
@@ -722,11 +723,17 @@ impl AtlasAllocator {
         self.check_tree();
     }
 
+    /// Recompute the allocations in the atlas and returns a list of the changes.
+    ///
+    /// Previous ids and rectangles are not valid anymore after this operation as each id/rectangle
+    /// pair is assigned to new values which are communicated in the returned change list.
+    /// Rearranging the atlas can help reduce fragmentation.
     pub fn rearrange(&mut self) -> ChangeList {
         let size = self.size;
         self.resize_and_rearrange(size)
     }
 
+    /// Identical to `AtlasAllocator::rearrange`, also allowing to change the size of the atlas.
     pub fn resize_and_rearrange(&mut self, new_size: Size) -> ChangeList {
         let mut allocs = Vec::with_capacity(self.nodes.len());
         for (i, node) in self.nodes.iter().enumerate() {
@@ -782,6 +789,9 @@ impl AtlasAllocator {
         }
     }
 
+    /// Resize the atlas without changing the allocations.
+    ///
+    /// This method is not allowed to shrink the width or height of the atlas.
     pub fn grow(&mut self, new_size: Size) {
         assert!(new_size.width >= self.size.width);
         assert!(new_size.height >= self.size.height);
