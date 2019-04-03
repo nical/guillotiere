@@ -382,8 +382,7 @@ impl AtlasAllocator {
         AtlasAllocator::with_options(size, &DEFAULT_OPTIONS)
     }
 
-    /// Create an atlas allocator that rounds out the allocated rectangles to multiples
-    /// of the provided value.
+    /// Create an atlas allocator with the provided options.
     pub fn with_options(size: Size, options: &AllocatorOptions) -> Self {
         assert!(options.snap_size > 0);
         assert!(size.width > 0);
@@ -426,8 +425,8 @@ impl AtlasAllocator {
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: Size) -> Option<Allocation> {
 
-        self.adjust_size(&mut requested_size.width);
-        self.adjust_size(&mut requested_size.height);
+        adjust_size(self.snap_size, &mut requested_size.width);
+        adjust_size(self.snap_size, &mut requested_size.height);
 
         // Find a suitable free rect.
         let chosen_id = self.find_suitable_rect(&requested_size);
@@ -441,85 +440,19 @@ impl AtlasAllocator {
         }
 
         let chosen_node = self.nodes[chosen_id.index()].clone();
+        let chosen_rect = chosen_node.rect;
+        let allocated_rect = Rectangle {
+            min: chosen_rect.min,
+            max: chosen_rect.min + requested_size.to_vector(),
+        };
         let current_orientation = chosen_node.orientation;
         assert_eq!(chosen_node.kind, NodeKind::Free);
 
-        // Decide whether to split horizontally or vertically.
-        //
-        // If the chosen free rectangle is bigger than the requested size, we subdivide it
-        // into an allocated rectangle, a split rectangle and a leftover rectangle:
-        //
-        // +-----------+-------------+
-        // |///////////|             |
-        // |/allocated/|             |
-        // |///////////|             |
-        // +-----------+             |
-        // |                         |
-        // |          chosen         |
-        // |                         |
-        // +-------------------------+
-        //
-        // Will be split into either:
-        //
-        // +-----------+-------------+
-        // |///////////|             |
-        // |/allocated/|  leftover   |
-        // |///////////|             |
-        // +-----------+-------------+
-        // |                         |
-        // |          split          |
-        // |                         |
-        // +-------------------------+
-        //
-        // or:
-        //
-        // +-----------+-------------+
-        // |///////////|             |
-        // |/allocated/|             |
-        // |///////////|    split    |
-        // +-----------+             |
-        // |           |             |
-        // | leftover  |             |
-        // |           |             |
-        // +-----------+-------------+
-
-        let candidate_leftover_rect_to_right = Rectangle {
-            min: chosen_node.rect.min + vec2(requested_size.width, 0),
-            max: point2(chosen_node.rect.max.x, chosen_node.rect.min.y + requested_size.height),
-        };
-        let candidate_leftover_rect_to_bottom = Rectangle {
-            min: chosen_node.rect.min + vec2(0, requested_size.height),
-            max: point2(chosen_node.rect.min.x + requested_size.width, chosen_node.rect.max.y),
-        };
-
-        let allocated_rect = Rectangle {
-            min: chosen_node.rect.min,
-            max: chosen_node.rect.min + requested_size.to_vector(),
-        };
-
-        let split_rect;
-        let leftover_rect;
-        let orientation;
-        if requested_size == chosen_node.rect.size() {
-            // Perfect fit.
-            orientation = current_orientation;
-            split_rect = Rectangle::zero();
-            leftover_rect = Rectangle::zero();
-        } else if candidate_leftover_rect_to_right.size().area() > candidate_leftover_rect_to_bottom.size().area() {
-            leftover_rect = candidate_leftover_rect_to_bottom;
-            split_rect = Rectangle {
-                min: candidate_leftover_rect_to_right.min,
-                max: point2(candidate_leftover_rect_to_right.max.x, chosen_node.rect.max.y),
-            };
-            orientation = Orientation::Horizontal;
-        } else {
-            leftover_rect = candidate_leftover_rect_to_right;
-            split_rect = Rectangle {
-                min: candidate_leftover_rect_to_bottom.min,
-                max: point2(chosen_node.rect.max.x, candidate_leftover_rect_to_bottom.max.y),
-            };
-            orientation = Orientation::Vertical;
-        }
+        let (split_rect, leftover_rect, orientation) = guillotine_rect(
+            &chosen_node.rect,
+            requested_size,
+            current_orientation,
+        );
 
         // Update the tree.
 
@@ -884,7 +817,7 @@ impl AtlasAllocator {
             let rect = Rectangle { min, max };
 
             self.nodes[free_node.index()] = Node {
-                parent: new_root,
+                parent: AllocIndex::NONE,
                 prev_sibbling: new_root,
                 next_sibbling: AllocIndex::NONE,
                 kind: NodeKind::Free,
@@ -919,6 +852,9 @@ impl AtlasAllocator {
                 iter = self.nodes[iter.index()].prev_sibbling;
             }
         }
+
+        #[cfg(feature = "checks")]
+        self.check_tree();
     }
 
     /// Invoke a callback for each free rectangle in the atlas.
@@ -954,10 +890,10 @@ impl AtlasAllocator {
         );
 
         let use_worst_fit = ideal_bucket != SMALL_BUCKET;
-        let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
-        let mut candidate = None;
-
         for bucket in ideal_bucket..NUM_BUCKETS {
+            let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
+            let mut candidate = None;
+
             let mut freelist_idx = 0;
             while freelist_idx < self.free_lists[bucket].len() {
                 let id = self.free_lists[bucket][freelist_idx];
@@ -1033,13 +969,6 @@ impl AtlasAllocator {
         self.nodes[id.index()].kind = NodeKind::Unused;
         self.nodes[id.index()].next_sibbling = self.unused_nodes;
         self.unused_nodes = id;
-    }
-
-    fn adjust_size(&self, size: &mut i32) {
-        let rem = *size % self.snap_size;
-        if rem > 0 {
-            *size += self.snap_size - rem;
-        }
     }
 
     #[allow(dead_code)]
@@ -1196,6 +1125,266 @@ impl std::ops::Index<AllocId> for AtlasAllocator {
 
         &self.nodes[idx.index()].rect
     }
+}
+
+/// A simpler atlas allocator implementation that can allocate rectangles but not deallocate them.
+pub struct SimpleAtlasAllocator {
+    free_rects: [Vec<Rectangle>; 3],
+    snap_size: i32,
+    small_size_threshold: i32,
+    large_size_threshold: i32,
+    size: Size,
+}
+
+impl SimpleAtlasAllocator {
+    /// Create a simple atlas allocator with default options.
+    pub fn new(size: Size) -> Self {
+        Self::with_options(size, &DEFAULT_OPTIONS)
+    }
+
+    /// Create a simple atlas allocator with the provided options.
+    pub fn with_options(size: Size, options: &AllocatorOptions) -> Self {
+        let bucket = free_list_for_size(
+            options.small_size_threshold,
+            options.large_size_threshold,
+            &size,
+        );
+
+        let mut free_rects = [Vec::new(), Vec::new(), Vec::new()];
+        free_rects[bucket].push(size.into());
+
+        SimpleAtlasAllocator {
+            free_rects,
+            snap_size: options.snap_size,
+            small_size_threshold: options.small_size_threshold,
+            large_size_threshold: options.large_size_threshold,
+            size
+        }
+    }
+
+    /// Clear the allocator.
+    pub fn reset(&mut self, size: Size) {
+        for i in 0..NUM_BUCKETS {
+            self.free_rects[i].clear();
+        }
+
+        let bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            &size,
+        );
+
+        self.free_rects[bucket].push(size.into());
+        self.size = size;
+    }
+
+    /// Clear the allocator and reset its options.
+    pub fn reset_with_options(&mut self, size: Size, options: &AllocatorOptions) {
+        self.snap_size = options.snap_size;
+        self.small_size_threshold = options.small_size_threshold;
+        self.large_size_threshold = options.large_size_threshold;
+
+        self.reset(size);
+    }
+
+    /// The total size of the atlas.
+    pub fn size(&self) -> Size {
+        self.size
+    }
+
+    /// Allocate a rectangle in the atlas.
+    pub fn allocate(&mut self, requested_size: Size) -> Option<Rectangle> {
+
+        let ideal_bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            &requested_size,
+        );
+
+        let use_worst_fit = ideal_bucket != SMALL_BUCKET;
+
+        let mut result = None;
+        for bucket in ideal_bucket..NUM_BUCKETS {
+            let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
+            let mut candidate = None;
+
+            for (index, rect) in self.free_rects[bucket].iter().enumerate() {
+
+                let dx = rect.size().width - requested_size.width;
+                let dy = rect.size().height - requested_size.height;
+
+                if dx >= 0 && dy >= 0 {
+                    if dx == 0 || dy == 0 {
+                        // Perfect fit!
+                        candidate = Some(index);
+                        break;
+                    }
+
+                    // Favor the largest minimum dimmension, except for small
+                    // allocations.
+                    let score = i32::min(dx, dy);
+                    if (use_worst_fit && score > candidate_score)
+                        || (!use_worst_fit && score < candidate_score) {
+                        candidate_score = score;
+                        candidate = Some(index);
+                    }
+                }
+            }
+
+            if let Some(index) = candidate {
+                let rect = self.free_rects[bucket].remove(index);
+                result = Some(rect);
+                break;
+            }
+        }
+
+        if let Some(rect) = result {
+            let (split_rect, leftover_rect, _ ) = guillotine_rect(&rect, requested_size, Orientation::Vertical);
+            self.add_free_rect(&split_rect);
+            self.add_free_rect(&leftover_rect);
+        }
+
+        return None;
+    }
+
+    /// Resize the atlas without changing the allocations.
+    ///
+    /// This method is not allowed to shrink the width or height of the atlas.
+    pub fn grow(&mut self, new_size: Size) {
+        assert!(new_size.width >= self.size.width);
+        assert!(new_size.height >= self.size.height);
+
+        let (split_rect, leftover_rect, _) = guillotine_rect(
+            &new_size.into(),
+            self.size,
+            Orientation::Vertical,
+        );
+
+        self.add_free_rect(&split_rect);
+        self.add_free_rect(&leftover_rect);
+    }
+
+    /// Initialize this simple allocator with the content of an atlas allocator.
+    pub fn init_from_allocator(&mut self, src: &AtlasAllocator) {
+        self.size = src.size;
+        self.small_size_threshold = src.small_size_threshold;
+        self.large_size_threshold = src.large_size_threshold;
+
+        for bucket in 0..NUM_BUCKETS {
+            for id in src.free_lists[bucket].iter() {
+                // During tree simplification we don't remove merged nodes from the free list, so we have
+                // to handle it here.
+                // This is a tad awkward, but lets us avoid having to maintain a doubly linked list for
+                // the free list (which would be needed to remove nodes during tree simplification).
+                if src.nodes[id.index()].kind != NodeKind::Free {
+                    continue;
+                }
+
+                self.free_rects[bucket].push(src.nodes[id.index()].rect);
+            }
+        }
+    }
+
+    fn add_free_rect(&mut self, rect: &Rectangle) {
+        if rect.size().width < self.snap_size || rect.size().height < self.snap_size {
+            return;
+        }
+
+        let bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            &rect.size(),
+        );
+
+        self.free_rects[bucket].push(*rect);
+    }
+}
+
+fn adjust_size(snap_size: i32, size: &mut i32) {
+    let rem = *size % snap_size;
+    if rem > 0 {
+        *size += snap_size - rem;
+    }
+}
+
+fn guillotine_rect(
+    chosen_rect: &Rectangle,
+    requested_size: Size,
+    default_orientation: Orientation,
+) -> (Rectangle, Rectangle, Orientation) {
+    // Decide whether to split horizontally or vertically.
+    //
+    // If the chosen free rectangle is bigger than the requested size, we subdivide it
+    // into an allocated rectangle, a split rectangle and a leftover rectangle:
+    //
+    // +-----------+-------------+
+    // |///////////|             |
+    // |/allocated/|             |
+    // |///////////|             |
+    // +-----------+             |
+    // |                         |
+    // |          chosen         |
+    // |                         |
+    // +-------------------------+
+    //
+    // Will be split into either:
+    //
+    // +-----------+-------------+
+    // |///////////|             |
+    // |/allocated/|  leftover   |
+    // |///////////|             |
+    // +-----------+-------------+
+    // |                         |
+    // |          split          |
+    // |                         |
+    // +-------------------------+
+    //
+    // or:
+    //
+    // +-----------+-------------+
+    // |///////////|             |
+    // |/allocated/|             |
+    // |///////////|    split    |
+    // +-----------+             |
+    // |           |             |
+    // | leftover  |             |
+    // |           |             |
+    // +-----------+-------------+
+
+    let candidate_leftover_rect_to_right = Rectangle {
+        min: chosen_rect.min + vec2(requested_size.width, 0),
+        max: point2(chosen_rect.max.x, chosen_rect.min.y + requested_size.height),
+    };
+    let candidate_leftover_rect_to_bottom = Rectangle {
+        min: chosen_rect.min + vec2(0, requested_size.height),
+        max: point2(chosen_rect.min.x + requested_size.width, chosen_rect.max.y),
+    };
+
+    let split_rect;
+    let leftover_rect;
+    let orientation;
+    if requested_size == chosen_rect.size() {
+        // Perfect fit.
+        orientation = default_orientation;
+        split_rect = Rectangle::zero();
+        leftover_rect = Rectangle::zero();
+    } else if candidate_leftover_rect_to_right.size().area() > candidate_leftover_rect_to_bottom.size().area() {
+        leftover_rect = candidate_leftover_rect_to_bottom;
+        split_rect = Rectangle {
+            min: candidate_leftover_rect_to_right.min,
+            max: point2(candidate_leftover_rect_to_right.max.x, chosen_rect.max.y),
+        };
+        orientation = Orientation::Horizontal;
+    } else {
+        leftover_rect = candidate_leftover_rect_to_right;
+        split_rect = Rectangle {
+            min: candidate_leftover_rect_to_bottom.min,
+            max: point2(chosen_rect.max.x, candidate_leftover_rect_to_bottom.max.y),
+        };
+        orientation = Orientation::Vertical;
+    }
+
+    (split_rect, leftover_rect, orientation)
 }
 
 pub struct Allocation {
