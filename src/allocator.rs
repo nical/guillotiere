@@ -738,7 +738,6 @@ impl AtlasAllocator {
         // If there is only one node and it is free, just grow it.
         let root = &mut self.nodes[self.root_node.index()];
         if root.kind == NodeKind::Free && root.rect.size() == old_size {
-            println!("just resize the root node");
             root.rect.max = root.rect.min + new_size.to_vector();
             return;
         }
@@ -752,20 +751,17 @@ impl AtlasAllocator {
         // If growing along the orientation of the root node, find the right-or-bottom-most sibbling
         // and either grow it (if it is free) or append a free node next.
         if grows_in_root_orientation {
-            println!("grows in root orientation");
             let mut sibbling = self.root_node;
             while self.nodes[sibbling.index()].next_sibbling != AllocIndex::NONE {
                 sibbling = self.nodes[sibbling.index()].next_sibbling;
             }
             let node = &mut self.nodes[sibbling.index()];
             if node.kind == NodeKind::Free {
-                println!("resize free node");
                 node.rect.max += match root_orientation {
                     Orientation::Horizontal => vec2(dx, 0),
                     Orientation::Vertical => vec2(0, dy),
                 };
             } else {
-                println!("add free node");
                 let rect = match root_orientation {
                     Orientation::Horizontal => {
                         let min = point2(node.rect.max.x, node.rect.min.y);
@@ -800,7 +796,6 @@ impl AtlasAllocator {
         };
 
         if grows_in_opposite_orientation {
-            println!("grows in opposite orientation");
             let free_node = self.new_node();
             let new_root = self.new_node();
 
