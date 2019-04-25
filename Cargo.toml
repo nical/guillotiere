@@ -16,6 +16,7 @@ serialization = ["serde", "euclid/serde"]
 [dependencies]
 euclid = "0.19.5"
 serde = { version = "1.0", optional = true, features = ["serde_derive"] }
+svg_fmt = "0.2.0"
 
 [workspace]
 members = ["cli"]
