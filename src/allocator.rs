@@ -1398,67 +1398,28 @@ pub struct ChangeList {
 }
 
 pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std::io::Result<()> {
+    use svg_fmt::*;
 
-    write!(
-        output,
-r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg
-   xmlns:dc="http://purl.org/dc/elements/1.1/"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns="http://www.w3.org/2000/svg"
-   id="svg8"
-   version="1.1"
-   viewBox="0 0 {width} {height}"
-   width="{width}mm"
-   height="{height}mm"
->
-  <defs
-     id="defs2" />
-  <metadata
-     id="metadata5">
-    <rdf:RDF>
-      <cc:Work
-         rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type
-           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
-      </cc:Work>
-    </rdf:RDF>
-  </metadata>
-  <g>
-"#,
-        width = atlas.size.width,
-        height = atlas.size.height,
-    )?;
+    writeln!(output, "{:?}", BeginSvg { w: atlas.size.width as f32, h: atlas.size.height as f32 })?;
 
     for node in &atlas.nodes {
-        let style = match node.kind {
-            NodeKind::Free => {
-                "fill:rgb(50,50,50);stroke-width:1;stroke:rgb(0,0,0)"
-            }
-            NodeKind::Alloc => {
-                "fill:rgb(50,70,180);stroke-width:1;stroke:rgb(0,0,0)"
-            }
+        let color = match node.kind {
+            NodeKind::Free => rgb(50, 50, 50),
+            NodeKind::Alloc => rgb(70, 70, 180),
             _ => { continue; }
         };
 
-        let rect = node.rect;
+        let (x, y) = node.rect.min.to_f32().to_tuple();
+        let (w, h) = node.rect.size().to_f32().to_tuple();
 
-        writeln!(
-            output,
-            r#"    <rect x="{}" y="{}" width="{}" height="{}" style="{}" />"#,
-            rect.min.x,
-            rect.min.y,
-            rect.size().width,
-            rect.size().height,
-            style,
+        writeln!(output, r#"    {:?}"#,
+            rectangle(x, y, w, h)
+                .fill(color)
+                .stroke(Stroke::Color(black(), 1.0))
         )?;
     }
 
-    writeln!(output, "</g></svg>" )
+    writeln!(output, "{:?}", EndSvg)
 }
 
 #[test]
