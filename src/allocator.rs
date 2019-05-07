@@ -34,6 +34,7 @@ impl AllocIndex {
 }
 
 /// ID referring to an allocated rectangle.
+#[repr(C)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AllocId(u32);
@@ -78,8 +79,9 @@ struct Node {
     rect: Rectangle,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to tweak the behavior of the atlas allocator.
+#[repr(C)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AllocatorOptions {
     /// Round the rectangle sizes up to a multiple of this value.
@@ -1382,11 +1384,13 @@ fn guillotine_rect(
     (split_rect, leftover_rect, orientation)
 }
 
+#[repr(C)]
 pub struct Allocation {
     pub id: AllocId,
     pub rectangle: Rectangle,
 }
 
+#[repr(C)]
 pub struct Change {
     pub old: Allocation,
     pub new: Allocation,

@@ -1,0 +1,13 @@
+[package]
+name = "guillotiere_ffi"
+version = "0.4.1"
+authors = ["Nicolas Silva <nical@fastmail.com>"]
+edition = "2018"
+license = "MIT/Apache-2.0"
+description = "C-compatible foreign function interface for guillotiere."
+repository = "https://github.com/nical/guillotiere"
+documentation = "https://docs.rs/guillotiere_ffi/"
+keywords = ["2d", "graphics", "ffi"]
+
+[dependencies]
+guillotiere = "0.4.1"
