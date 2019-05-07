@@ -71,8 +71,8 @@ pub enum NodeKind {
 #[derive(Clone, Debug)]
 struct Node {
     parent: AllocIndex,
-    next_sibbling: AllocIndex,
-    prev_sibbling: AllocIndex,
+    next_sibling: AllocIndex,
+    prev_sibling: AllocIndex,
     kind: NodeKind,
     orientation: Orientation,
     rect: Rectangle,
@@ -119,7 +119,7 @@ impl Default for AllocatorOptions {
 /// A dynamic texture atlas allocator using the guillotine algorithm.
 ///
 /// The guillotine algorithm is assisted by a data structure that keeps track of
-/// nighboring rectangles to provide fast deallocation and coalescing.
+/// neighboring rectangles to provide fast deallocation and coalescing.
 ///
 /// ## Goals
 ///
@@ -128,11 +128,11 @@ impl Default for AllocatorOptions {
 /// visit a large amount of free rectangles to find merge candidates.
 ///
 /// This implementation proposes a compromise with fast (constant time) search
-/// for merge candidates at the expense of some (constant time) bookeeping overhead
+/// for merge candidates at the expense of some (constant time) bookkeeping overhead
 /// when allocating and removing rectangles and imperfect defragmentation (see the
 /// "Limitations" section below.
 ///
-/// The subdivision scheme uses the worst fit varriant of the guillotine algorithm
+/// The subdivision scheme uses the worst fit variant of the guillotine algorithm
 /// for its simplicity and CPU efficiency.
 ///
 /// ## The data structure
@@ -197,23 +197,23 @@ impl Default for AllocatorOptions {
 /// The goal of this data structure is to quickly find neighboring free
 /// rectangles that can be coalesced into fewer rectangles.
 /// This structure guarantees that two consecutive children of the same
-/// container, if both rectangles are free, can be coalesed into a single
+/// container, if both rectangles are free, can be coalesced into a single
 /// one.
 ///
 /// An important thing to note about this tree structure is that we only
-/// use it to visit niieghbor and parent nodes. As a result we don't care
+/// use it to visit neighbor and parent nodes. As a result we don't care
 /// about whether the tree is balanced, although flat sequences of children
 /// tend to offer more opportunity for coalescing than deeply nested structures
 /// Either way, the cost of finding potential merges is the same because
-/// each node stores the indices of their sibblings, and we never have to
+/// each node stores the indices of their siblings, and we never have to
 /// traverse any global list of free rectangle nodes.
 ///
-/// ### Merging sibblings
+/// ### Merging siblings
 ///
-/// As soon as two consecutive sibbling nodes are marked as "free", they are coalesced
+/// As soon as two consecutive sibling nodes are marked as "free", they are coalesced
 /// into a single node.
 ///
-/// In the example below, we juct deallocated the rectangle `B`, which is a sibblig of
+/// In the example below, we just deallocated the rectangle `B`, which is a sibling of
 /// `A` which is free and `C` which is still allocated. `A` and `B` are merged and this
 /// change is reflected on the tree as shown below:
 ///
@@ -257,7 +257,7 @@ impl Default for AllocatorOptions {
 /// ### Limitations
 ///
 /// This strategy can miss some opportunities for coalescing free rectangles
-/// when the two sibbling containers are split exactly the same way.
+/// when the two sibling containers are split exactly the same way.
 ///
 /// For example:
 ///
@@ -288,9 +288,9 @@ impl Default for AllocatorOptions {
 ///   A   B   C   D  |                     A   C   B   D  |
 /// ```
 ///
-/// In the former case A can't be merged with C nor B with D because they are not sibblings.
+/// In the former case A can't be merged with C nor B with D because they are not siblings.
 ///
-/// For a lot of workloads it is rather rare for two consecutive sibbling containers to be
+/// For a lot of workloads it is rather rare for two consecutive sibling containers to be
 /// subdivided exactly the same way. In this situation losing the ability to merge rectangles
 /// that aren't under the same container is good compromise between the CPU cost of coalescing
 /// and the fragmentation of the atlas.
@@ -306,10 +306,10 @@ pub struct AtlasAllocator {
     free_lists: [Vec<AllocIndex>; NUM_BUCKETS],
 
     /// Index of the first element of an intrusive linked list of unused nodes.
-    /// The `next_sibbling` member of unused node serves as the linked list link.
+    /// The `next_sibling` member of unused node serves as the linked list link.
     unused_nodes: AllocIndex,
 
-    /// We keep a per-node generation counter to reduce the lekelihood of ID reuse bugs
+    /// We keep a per-node generation counter to reduce the likelihood of ID reuse bugs
     /// going unnoticed.
     generations: Vec<Wrapping<u8>>,
 
@@ -334,18 +334,18 @@ pub struct AtlasAllocator {
 //      (AllocIndex::NONE)                (AllocIndex::NONE)
 //              ^                                 ^
 //              | parent                          | parent
-//           +---------+ next sibbling         +---------+ next sibbling
+//           +---------+ next sibling         +---------+ next sibling
 // ... ------|Container|---------------------->|Free     |---> (AllocIndex::NONE)
 //     ----->|         |<----------------------|         |
-//           +---------+     previous sibbling +---------+
+//           +---------+     previous sibling +---------+
 //              ^ ^
 //              |  \____________________________
 //              |                               \
 //              | parent                         \ parent
-//           +---------+ next sibbling         +---------+ next sibbling
+//           +---------+ next sibling         +---------+ next sibling
 // ... ------|Alloc    |---------------------->|container|---> (AllocIndex::NONE)
 //     ----->|         |<----------------------|         |
-//           +---------+     previous sibbling +---------+
+//           +---------+     previous sibling +---------+
 //                                               ^ ^ ^
 //                                              /  |  \
 //                                                ...
@@ -355,16 +355,16 @@ pub struct AtlasAllocator {
 //   AllocIndex::NONE that means no link.
 // - Nodes have a link to their parent, but parents do not have a link to any of its children because
 //   we never need to traverse the structure from parent to child.
-// - All nodes with the same parent are "sibblings". An intrusive linked list allows traversing sibblings
-//   in order. Consecutive sibblings share an edge and can be merged if they are both "free".
-// - There isn't necessarily a single root node. The top-most level of the tree can have several sibblings
+// - All nodes with the same parent are "siblings". An intrusive linked list allows traversing siblings
+//   in order. Consecutive siblings share an edge and can be merged if they are both "free".
+// - There isn't necessarily a single root node. The top-most level of the tree can have several siblings
 //   and their parent index is equal to AllocIndex::NONE. AtlasAllocator::root_node only needs to refer
 //   to one of these top-level nodes.
 // - After a rectangle has been deallocated, the slot for its node in the vector is not part of the
-//   tree anymore in the sense that no node from the tree points to it with its sibbling list or parent
+//   tree anymore in the sense that no node from the tree points to it with its sibling list or parent
 //   index. This unused node is available for reuse in a future allocation, and is placed in another
-//   linked list (also using AllocIndex), a singly linked list this time, which reuses the next_sibbling
-//   member of the node. So depending on whether the node kind is Unused or not, the next_sibbling
+//   linked list (also using AllocIndex), a singly linked list this time, which reuses the next_sibling
+//   member of the node. So depending on whether the node kind is Unused or not, the next_sibling
 //   member is used different things.
 // - We reuse nodes aggressively to avoid growing the vector whenever possible. This is important because
 //   the memory footprint of this data structure depends on the capacity of its vectors which don't
@@ -400,8 +400,8 @@ impl AtlasAllocator {
         AtlasAllocator {
             nodes: vec![Node {
                 parent: AllocIndex::NONE,
-                next_sibbling: AllocIndex::NONE,
-                prev_sibbling: AllocIndex::NONE,
+                next_sibling: AllocIndex::NONE,
+                prev_sibling: AllocIndex::NONE,
                 rect: size.into(),
                 kind: NodeKind::Free,
                 orientation: Orientation::Vertical,
@@ -462,21 +462,21 @@ impl AtlasAllocator {
         //println!("{:?} -> {:?}", current_orientation, orientation);
         if orientation == current_orientation {
             if split_rect.size().area() > 0 {
-                let next_sibbling = chosen_node.next_sibbling;
+                let next_sibling = chosen_node.next_sibling;
 
                 split_id = self.new_node();
                 self.nodes[split_id.index()] = Node {
                     parent: chosen_node.parent,
-                    next_sibbling,
-                    prev_sibbling: chosen_id,
+                    next_sibling,
+                    prev_sibling: chosen_id,
                     rect: split_rect,
                     kind: NodeKind::Free,
                     orientation: current_orientation,
                 };
 
-                self.nodes[chosen_id.index()].next_sibbling = split_id;
-                if next_sibbling.is_some() {
-                    self.nodes[next_sibbling.index()].prev_sibbling = split_id;
+                self.nodes[chosen_id.index()].next_sibling = split_id;
+                if next_sibling.is_some() {
+                    self.nodes[next_sibling.index()].prev_sibling = split_id;
                 }
             } else {
                 split_id = AllocIndex::NONE;
@@ -490,8 +490,8 @@ impl AtlasAllocator {
 
                 self.nodes[allocated_id.index()] = Node {
                     parent: chosen_id,
-                    next_sibbling: leftover_id,
-                    prev_sibbling: AllocIndex::NONE,
+                    next_sibling: leftover_id,
+                    prev_sibling: AllocIndex::NONE,
                     rect: allocated_rect,
                     kind: NodeKind::Alloc,
                     orientation: current_orientation.flipped(),
@@ -499,8 +499,8 @@ impl AtlasAllocator {
 
                 self.nodes[leftover_id.index()] = Node {
                     parent: chosen_id,
-                    next_sibbling: AllocIndex::NONE,
-                    prev_sibbling: allocated_id,
+                    next_sibling: AllocIndex::NONE,
+                    prev_sibling: allocated_id,
                     rect: leftover_rect,
                     kind: NodeKind::Free,
                     orientation: current_orientation.flipped(),
@@ -521,8 +521,8 @@ impl AtlasAllocator {
                 split_id = self.new_node();
                 self.nodes[split_id.index()] = Node {
                     parent: chosen_id,
-                    next_sibbling: AllocIndex::NONE,
-                    prev_sibbling: AllocIndex::NONE,
+                    next_sibling: AllocIndex::NONE,
+                    prev_sibling: AllocIndex::NONE,
                     rect: split_rect,
                     kind: NodeKind::Free,
                     orientation: current_orientation.flipped(),
@@ -535,22 +535,22 @@ impl AtlasAllocator {
                 let container_id = self.new_node();
                 self.nodes[container_id.index()] = Node {
                     parent: chosen_id,
-                    next_sibbling: split_id,
-                    prev_sibbling: AllocIndex::NONE,
+                    next_sibling: split_id,
+                    prev_sibling: AllocIndex::NONE,
                     rect: Rectangle::zero(),
                     kind: NodeKind::Container,
                     orientation: current_orientation.flipped(),
                 };
 
-                self.nodes[split_id.index()].prev_sibbling = container_id;
+                self.nodes[split_id.index()].prev_sibling = container_id;
 
                 allocated_id = self.new_node();
                 leftover_id = self.new_node();
 
                 self.nodes[allocated_id.index()] = Node {
                     parent: container_id,
-                    next_sibbling: leftover_id,
-                    prev_sibbling: AllocIndex::NONE,
+                    next_sibling: leftover_id,
+                    prev_sibling: AllocIndex::NONE,
                     rect: allocated_rect,
                     kind: NodeKind::Alloc,
                     orientation: current_orientation,
@@ -558,8 +558,8 @@ impl AtlasAllocator {
 
                 self.nodes[leftover_id.index()] = Node {
                     parent: container_id,
-                    next_sibbling: AllocIndex::NONE,
-                    prev_sibbling: allocated_id,
+                    next_sibling: AllocIndex::NONE,
+                    prev_sibling: allocated_id,
                     rect: leftover_rect,
                     kind: NodeKind::Free,
                     orientation: current_orientation,
@@ -568,14 +568,14 @@ impl AtlasAllocator {
                 allocated_id = self.new_node();
                 self.nodes[allocated_id.index()] = Node {
                     parent: chosen_id,
-                    next_sibbling: split_id,
-                    prev_sibbling: AllocIndex::NONE,
+                    next_sibling: split_id,
+                    prev_sibling: AllocIndex::NONE,
                     rect: allocated_rect,
                     kind: NodeKind::Alloc,
                     orientation: current_orientation.flipped(),
                 };
 
-                self.nodes[split_id.index()].prev_sibbling = allocated_id;
+                self.nodes[split_id.index()].prev_sibling = allocated_id;
 
                 leftover_id = AllocIndex::NONE;
             }
@@ -614,25 +614,25 @@ impl AtlasAllocator {
         loop {
             let orientation = self.nodes[node_id.index()].orientation;
 
-            let next = self.nodes[node_id.index()].next_sibbling;
-            let prev = self.nodes[node_id.index()].prev_sibbling;
+            let next = self.nodes[node_id.index()].next_sibling;
+            let prev = self.nodes[node_id.index()].prev_sibling;
 
             // Try to merge with the next node.
             if next.is_some() && self.nodes[next.index()].kind == NodeKind::Free {
-                self.merge_sibblings(node_id, next, orientation);
+                self.merge_siblings(node_id, next, orientation);
             }
 
             // Try to merge with the previous node.
             if prev.is_some() && self.nodes[prev.index()].kind == NodeKind::Free {
-                self.merge_sibblings(prev, node_id, orientation);
+                self.merge_siblings(prev, node_id, orientation);
                 node_id = prev;
             }
 
             // If this node is now a unique child. We collapse it into its parent and try to merge
             // again at the parent level.
             let parent = self.nodes[node_id.index()].parent;
-            if self.nodes[node_id.index()].prev_sibbling.is_none()
-                && self.nodes[node_id.index()].next_sibbling.is_none()
+            if self.nodes[node_id.index()].prev_sibling.is_none()
+                && self.nodes[node_id.index()].next_sibling.is_none()
                 && parent.is_some() {
                 //println!("collapse #{:?} into parent #{:?}", node_id, parent);
 
@@ -696,8 +696,8 @@ impl AtlasAllocator {
 
         self.nodes.push(Node {
             parent: AllocIndex::NONE,
-            next_sibbling: AllocIndex::NONE,
-            prev_sibbling: AllocIndex::NONE,
+            next_sibling: AllocIndex::NONE,
+            prev_sibling: AllocIndex::NONE,
             rect: new_size.into(),
             kind: NodeKind::Free,
             orientation: Orientation::Vertical,
@@ -748,14 +748,14 @@ impl AtlasAllocator {
             Orientation::Vertical => dy > 0,
         };
 
-        // If growing along the orientation of the root node, find the right-or-bottom-most sibbling
+        // If growing along the orientation of the root node, find the right-or-bottom-most sibling
         // and either grow it (if it is free) or append a free node next.
         if grows_in_root_orientation {
-            let mut sibbling = self.root_node;
-            while self.nodes[sibbling.index()].next_sibbling != AllocIndex::NONE {
-                sibbling = self.nodes[sibbling.index()].next_sibbling;
+            let mut sibling = self.root_node;
+            while self.nodes[sibling.index()].next_sibling != AllocIndex::NONE {
+                sibling = self.nodes[sibling.index()].next_sibling;
             }
-            let node = &mut self.nodes[sibbling.index()];
+            let node = &mut self.nodes[sibling.index()];
             if node.kind == NodeKind::Free {
                 node.rect.max += match root_orientation {
                     Orientation::Horizontal => vec2(dx, 0),
@@ -776,12 +776,12 @@ impl AtlasAllocator {
                 };
 
                 let next = self.new_node();
-                self.nodes[sibbling.index()].next_sibbling = next;
+                self.nodes[sibling.index()].next_sibling = next;
                 self.nodes[next.index()] = Node {
                     kind: NodeKind::Free,
                     rect,
-                    prev_sibbling: sibbling,
-                    next_sibbling: AllocIndex::NONE,
+                    prev_sibling: sibling,
+                    next_sibling: AllocIndex::NONE,
                     parent: AllocIndex::NONE,
                     orientation: root_orientation,
                 };
@@ -813,8 +813,8 @@ impl AtlasAllocator {
 
             self.nodes[free_node.index()] = Node {
                 parent: AllocIndex::NONE,
-                prev_sibbling: new_root,
-                next_sibbling: AllocIndex::NONE,
+                prev_sibling: new_root,
+                next_sibling: AllocIndex::NONE,
                 kind: NodeKind::Free,
                 rect,
                 orientation: new_root_orientation,
@@ -822,8 +822,8 @@ impl AtlasAllocator {
 
             self.nodes[new_root.index()] = Node {
                 parent: AllocIndex::NONE,
-                prev_sibbling: AllocIndex::NONE,
-                next_sibbling: free_node,
+                prev_sibling: AllocIndex::NONE,
+                next_sibling: free_node,
                 kind: NodeKind::Container,
                 rect: Rectangle::zero(),
                 orientation: new_root_orientation,
@@ -836,15 +836,15 @@ impl AtlasAllocator {
             let mut iter = old_root;
             while iter != AllocIndex::NONE {
                 self.nodes[iter.index()].parent = new_root;
-                iter = self.nodes[iter.index()].next_sibbling;
+                iter = self.nodes[iter.index()].next_sibling;
             }
 
             // That second loop might not be necessary, I think that the root is always the first
-            // sibbling
-            let mut iter = self.nodes[old_root.index()].next_sibbling;
+            // sibling
+            let mut iter = self.nodes[old_root.index()].next_sibling;
             while iter != AllocIndex::NONE {
                 self.nodes[iter.index()].parent = new_root;
-                iter = self.nodes[iter.index()].prev_sibbling;
+                iter = self.nodes[iter.index()].prev_sibling;
             }
         }
 
@@ -940,15 +940,15 @@ impl AtlasAllocator {
     fn new_node(&mut self) -> AllocIndex {
         let idx = self.unused_nodes;
         if idx.index() < self.nodes.len() {
-            self.unused_nodes = self.nodes[idx.index()].next_sibbling;
+            self.unused_nodes = self.nodes[idx.index()].next_sibling;
             self.generations[idx.index()] += Wrapping(1);
             return idx;
         }
 
         self.nodes.push(Node {
             parent: AllocIndex::NONE,
-            next_sibbling: AllocIndex::NONE,
-            prev_sibbling: AllocIndex::NONE,
+            next_sibling: AllocIndex::NONE,
+            prev_sibling: AllocIndex::NONE,
             rect: Rectangle::zero(),
             kind: NodeKind::Unused,
             orientation: Orientation::Horizontal,
@@ -962,7 +962,7 @@ impl AtlasAllocator {
     fn mark_node_unused(&mut self, id: AllocIndex) {
         debug_assert!(self.nodes[id.index()].kind != NodeKind::Unused);
         self.nodes[id.index()].kind = NodeKind::Unused;
-        self.nodes[id.index()].next_sibbling = self.unused_nodes;
+        self.nodes[id.index()].next_sibling = self.unused_nodes;
         self.unused_nodes = id;
     }
 
@@ -989,15 +989,15 @@ impl AtlasAllocator {
     }
 
     #[cfg(feature = "checks")]
-    fn check_sibblings(&self, id: AllocIndex, next: AllocIndex, orientation: Orientation) {
+    fn check_siblings(&self, id: AllocIndex, next: AllocIndex, orientation: Orientation) {
         if next.is_none() {
             return;
         }
 
-        if self.nodes[next.index()].prev_sibbling != id {
-            //println!("error: #{:?}'s next sibbling #{:?} has prev sibbling #{:?}", id, next, self.nodes[next.index()].prev_sibbling);
+        if self.nodes[next.index()].prev_sibling != id {
+            //println!("error: #{:?}'s next sibling #{:?} has prev sibling #{:?}", id, next, self.nodes[next.index()].prev_sibling);
         }
-        assert_eq!(self.nodes[next.index()].prev_sibbling, id);
+        assert_eq!(self.nodes[next.index()].prev_sibling, id);
 
         match self.nodes[id.index()].kind {
             NodeKind::Container | NodeKind::Unused => {
@@ -1035,14 +1035,14 @@ impl AtlasAllocator {
                 continue;
             }
 
-            let mut iter = node.next_sibbling;
+            let mut iter = node.next_sibling;
             while iter.is_some() {
                 assert_eq!(self.nodes[iter.index()].orientation, node.orientation);
                 assert_eq!(self.nodes[iter.index()].parent, node.parent);
-                let next = self.nodes[iter.index()].next_sibbling;
+                let next = self.nodes[iter.index()].next_sibling;
 
                 #[cfg(feature = "checks")]
-                self.check_sibblings(iter, next, node.orientation);
+                self.check_siblings(iter, next, node.orientation);
 
                 iter = next;
 
@@ -1070,7 +1070,7 @@ impl AtlasAllocator {
     }
 
     // Merge `next` into `node` and append `next` to a list of available `nodes`vector slots.
-    fn merge_sibblings(&mut self, node: AllocIndex, next: AllocIndex, orientation: Orientation) {
+    fn merge_siblings(&mut self, node: AllocIndex, next: AllocIndex, orientation: Orientation) {
         let r1 = self.nodes[node.index()].rect;
         let r2 = self.nodes[next.index()].rect;
         //println!("merge {} #{:?} and {} #{:?}       {:?}", r1, node, r2, next, orientation);
@@ -1088,11 +1088,11 @@ impl AtlasAllocator {
             }
         }
 
-        // Remove the merged node from the sibbling list.
-        let next_next = self.nodes[next.index()].next_sibbling;
-        self.nodes[node.index()].next_sibbling = next_next;
+        // Remove the merged node from the sibling list.
+        let next_next = self.nodes[next.index()].next_sibling;
+        self.nodes[node.index()].next_sibling = next_next;
         if next_next.is_some() {
-            self.nodes[next_next.index()].prev_sibbling = node;
+            self.nodes[next_next.index()].prev_sibling = node;
         }
 
         // Add the merged node to the list of available slots in the nodes vector.
