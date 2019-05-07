@@ -1,0 +1,7 @@
+include_version = true
+
+header = """
+struct guillotiere_atlas_allocator_t;
+struct guillotiere_simple_atlas_allocator_t;
+struct guillotiere_change_list_t;
+"""

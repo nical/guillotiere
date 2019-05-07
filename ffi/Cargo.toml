@@ -1,6 +1,6 @@
 [package]
 name = "guillotiere_ffi"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Nicolas Silva <nical@fastmail.com>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
@@ -10,4 +10,4 @@ documentation = "https://docs.rs/guillotiere_ffi/"
 keywords = ["2d", "graphics", "ffi"]
 
 [dependencies]
-guillotiere = "0.4.1"
+guillotiere = { version = "0.4.2", path = ".." }
