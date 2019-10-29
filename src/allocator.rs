@@ -1190,7 +1190,10 @@ impl SimpleAtlasAllocator {
     }
 
     /// Allocate a rectangle in the atlas.
-    pub fn allocate(&mut self, requested_size: Size) -> Option<Rectangle> {
+    pub fn allocate(&mut self, mut requested_size: Size) -> Option<Rectangle> {
+
+        adjust_size(self.snap_size, &mut requested_size.width);
+        adjust_size(self.snap_size, &mut requested_size.height);
 
         let ideal_bucket = free_list_for_size(
             self.small_size_threshold,
@@ -1200,7 +1203,7 @@ impl SimpleAtlasAllocator {
 
         let use_worst_fit = ideal_bucket != SMALL_BUCKET;
 
-        let mut result = None;
+        let mut chosen_rect = None;
         for bucket in ideal_bucket..NUM_BUCKETS {
             let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
             let mut candidate = None;
@@ -1230,18 +1233,23 @@ impl SimpleAtlasAllocator {
 
             if let Some(index) = candidate {
                 let rect = self.free_rects[bucket].remove(index);
-                result = Some(rect);
+                chosen_rect = Some(rect);
                 break;
             }
         }
 
-        if let Some(rect) = result {
+        if let Some(rect) = chosen_rect {
             let (split_rect, leftover_rect, _ ) = guillotine_rect(&rect, requested_size, Orientation::Vertical);
             self.add_free_rect(&split_rect);
             self.add_free_rect(&leftover_rect);
+
+            return Some(Rectangle {
+                min: rect.min,
+                max: rect.min + requested_size.to_vector(),
+            });
         }
 
-        return None;
+        None
     }
 
     /// Resize the atlas without changing the allocations.
@@ -1427,7 +1435,7 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
 }
 
 #[test]
-fn atlas_simple() {
+fn atlas_basic() {
     let mut atlas = AtlasAllocator::new(size2(1000, 1000));
 
     let full = atlas.allocate(size2(1000,1000)).unwrap().id;
@@ -1550,5 +1558,33 @@ fn test_grow() {
     let full = atlas.allocate(size2(4000, 4000)).unwrap().id;
     assert!(atlas.allocate(size2(1, 1)).is_none());
     atlas.deallocate(full);
+}
+
+#[test]
+fn simple_atlas() {
+    let mut atlas = SimpleAtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.allocate(size2(1, 1001)).is_none());
+    assert!(atlas.allocate(size2(1001, 1)).is_none());
+
+    let mut rectangles = Vec::new();
+    rectangles.push(atlas.allocate(size2(100, 1000)).unwrap());
+    rectangles.push(atlas.allocate(size2(900, 200)).unwrap());
+    rectangles.push(atlas.allocate(size2(300, 200)).unwrap());
+    rectangles.push(atlas.allocate(size2(200, 300)).unwrap());
+    rectangles.push(atlas.allocate(size2(100, 300)).unwrap());
+    rectangles.push(atlas.allocate(size2(100, 300)).unwrap());
+    rectangles.push(atlas.allocate(size2(100, 300)).unwrap());
+    assert!(atlas.allocate(size2(800, 800)).is_none());
+
+    for i in 0..rectangles.len() {
+        for j in 0..rectangles.len() {
+            if i == j {
+                continue;
+            }
+
+            assert!(!rectangles[i].intersects(&rectangles[j]));
+        }
+    }
 }
 
