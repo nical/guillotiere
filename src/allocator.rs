@@ -1409,6 +1409,7 @@ pub struct ChangeList {
     pub failures: Vec<Allocation>,
 }
 
+#[cfg(feature = "svg_fmt")]
 pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std::io::Result<()> {
     use svg_fmt::*;
 

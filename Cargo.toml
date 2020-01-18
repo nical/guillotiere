@@ -12,11 +12,12 @@ keywords = ["2d", "graphics"]
 [features]
 checks = []
 serialization = ["serde", "euclid/serde"]
+svg = ["svg_fmt"]
 
 [dependencies]
 euclid = "0.19.5"
 serde = { version = "1.0", optional = true, features = ["serde_derive"] }
-svg_fmt = "0.2.0"
+svg_fmt = { version = "0.2.0", optional = true }
 
 [workspace]
 members = ["cli", "ffi"]
