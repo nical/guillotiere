@@ -4,6 +4,7 @@ pub extern crate serde;
 pub extern crate euclid;
 
 mod allocator;
+pub mod recording;
 
 pub use crate::allocator::*;
 pub use euclid::{size2, point2};

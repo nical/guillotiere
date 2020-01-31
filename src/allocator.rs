@@ -39,6 +39,10 @@ impl AllocIndex {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AllocId(u32);
 
+impl AllocId {
+    pub(crate) fn to_u32(&self) -> u32 { self.0 }
+}
+
 const GEN_MASK: u32 = 0xFF000000;
 const IDX_MASK: u32 = 0x00FFFFFF;
 
@@ -1393,20 +1397,32 @@ fn guillotine_rect(
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Allocation {
     pub id: AllocId,
     pub rectangle: Rectangle,
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Change {
     pub old: Allocation,
     pub new: Allocation,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChangeList {
     pub changes: Vec<Change>,
     pub failures: Vec<Allocation>,
+}
+
+impl ChangeList {
+    pub fn empty() -> Self {
+        ChangeList {
+            changes: Vec::new(),
+            failures: Vec::new(),
+        }
+    }
 }
 
 #[cfg(feature = "svg_fmt")]
@@ -1493,7 +1509,7 @@ fn atlas_random_test() {
     let mut misses: usize = 0;
 
     let mut allocated = Vec::new();
-    for _ in 0..1000000 {
+    for _ in 0..500000 {
         if rand() % 5 > 2 && !allocated.is_empty() {
             // deallocate something
             let nth = rand() % allocated.len();
