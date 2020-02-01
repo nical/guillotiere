@@ -430,6 +430,9 @@ impl AtlasAllocator {
 
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: Size) -> Option<Allocation> {
+        if requested_size.is_empty_or_negative() {
+            return None;
+        }
 
         adjust_size(self.snap_size, &mut requested_size.width);
         adjust_size(self.snap_size, &mut requested_size.height);
@@ -1195,6 +1198,9 @@ impl SimpleAtlasAllocator {
 
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: Size) -> Option<Rectangle> {
+        if requested_size.is_empty_or_negative() {
+            return None;
+        }
 
         adjust_size(self.snap_size, &mut requested_size.width);
         adjust_size(self.snap_size, &mut requested_size.height);
@@ -1605,3 +1611,21 @@ fn simple_atlas() {
     }
 }
 
+
+#[test]
+fn allocate_zero() {
+    let mut atlas = SimpleAtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.allocate(size2(0, 0)).is_none());
+}
+
+#[test]
+fn allocate_negative() {
+    let mut atlas = SimpleAtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.allocate(size2(-1, 1)).is_none());
+    assert!(atlas.allocate(size2(1, -1)).is_none());
+    assert!(atlas.allocate(size2(-1, -1)).is_none());
+
+    assert!(atlas.allocate(size2(-167114179, -718142)).is_none());
+}
