@@ -15,7 +15,7 @@ impl RecordingAllocator {
                 events: Vec::new(),
                 initial_size: size,
                 options: DEFAULT_OPTIONS,
-            }
+            },
         }
     }
 
@@ -27,7 +27,7 @@ impl RecordingAllocator {
                 events: Vec::new(),
                 initial_size: size,
                 options: *options,
-            }
+            },
         }
     }
 
@@ -39,7 +39,8 @@ impl RecordingAllocator {
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, requested_size: Size) -> Option<Allocation> {
         let res = self.allocator.allocate(requested_size);
-        self.recorder.record(Event::Allocate(requested_size, res.map(|alloc| alloc.id)));
+        self.recorder
+            .record(Event::Allocate(requested_size, res.map(|alloc| alloc.id)));
 
         res
     }
@@ -65,7 +66,8 @@ impl RecordingAllocator {
     /// Identical to `AtlasAllocator::rearrange`, also allowing to change the size of the atlas.
     pub fn resize_and_rearrange(&mut self, new_size: Size) -> ChangeList {
         let changes = self.allocator.resize_and_rearrange(new_size);
-        self.recorder.record(Event::ResizeAndRearrange(new_size, changes.clone()));
+        self.recorder
+            .record(Event::ResizeAndRearrange(new_size, changes.clone()));
 
         changes
     }
@@ -76,15 +78,18 @@ impl RecordingAllocator {
     }
 
     pub fn for_each_free_rectangle<F>(&self, callback: F)
-    where F: FnMut(&Rectangle) {
+    where
+        F: FnMut(&Rectangle),
+    {
         self.allocator.for_each_free_rectangle(callback);
     }
 
     pub fn for_each_allocated_rectangle<F>(&self, callback: F)
-    where F: FnMut(AllocId, &Rectangle) {
+    where
+        F: FnMut(AllocId, &Rectangle),
+    {
         self.allocator.for_each_allocated_rectangle(callback);
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -111,7 +116,7 @@ impl Recorder {
         Recording {
             events: std::mem::replace(&mut self.events, Vec::new()),
             options: self.options,
-            initial_size: self.initial_size
+            initial_size: self.initial_size,
         }
     }
 }
@@ -148,8 +153,12 @@ impl Recording {
                         let alloc = allocator.allocate(size);
 
                         match alloc {
-                            Some(_) => { stats.allocations += 1; }
-                            None => { stats.failed_allocations += 1; }
+                            Some(_) => {
+                                stats.allocations += 1;
+                            }
+                            None => {
+                                stats.failed_allocations += 1;
+                            }
                         }
 
                         if let Some(recorded_id) = recorded_id {
@@ -227,7 +236,7 @@ impl Recording {
         loop {
             if i >= recording.events.len() {
                 recording.remap_ids();
-                return recording
+                return recording;
             }
 
             let mut reduced = recording.clone();
@@ -246,11 +255,26 @@ impl Recording {
         writeln!(output, "fn reduced_testcase() {{")?;
         writeln!(output, "    let options = AllocatorOptions {{")?;
         writeln!(output, "         snap_size: {},", self.options.snap_size)?;
-        writeln!(output, "         small_size_threshold: {},", self.options.small_size_threshold)?;
-        writeln!(output, "         large_size_threshold: {},", self.options.large_size_threshold)?;
+        writeln!(
+            output,
+            "         small_size_threshold: {},",
+            self.options.small_size_threshold
+        )?;
+        writeln!(
+            output,
+            "         large_size_threshold: {},",
+            self.options.large_size_threshold
+        )?;
         writeln!(output, "    }};")?;
-        writeln!(output, "    let size = size2({}, {});", self.initial_size.width, self.initial_size.height)?;
-        writeln!(output, "    let mut allocator = AtlasAllocator::with_options(size, options);")?;
+        writeln!(
+            output,
+            "    let size = size2({}, {});",
+            self.initial_size.width, self.initial_size.height
+        )?;
+        writeln!(
+            output,
+            "    let mut allocator = AtlasAllocator::with_options(size, options);"
+        )?;
         let mut next_identifier = self.events.len() as u32;
         for event in &self.events {
             match *event {
@@ -266,16 +290,28 @@ impl Recording {
                     )?;
                 }
                 Event::Deallocate(id) => {
-                    writeln!(output, "    allocator.deallocate(r{}.unwrap().id);", id.to_u32())?;
+                    writeln!(
+                        output,
+                        "    allocator.deallocate(r{}.unwrap().id);",
+                        id.to_u32()
+                    )?;
                 }
                 Event::Grow(size) => {
-                    writeln!(output, "    allocator.grow(size2({}, {}));", size.width, size.height)?;
+                    writeln!(
+                        output,
+                        "    allocator.grow(size2({}, {}));",
+                        size.width, size.height
+                    )?;
                 }
                 Event::Rearrange(_) => {
                     writeln!(output, "    allocator.rearrange();")?;
                 }
                 Event::ResizeAndRearrange(size, _) => {
-                    writeln!(output, "    allocator.resize_and_rearrange(size2({}, {}));", size.width, size.height)?;
+                    writeln!(
+                        output,
+                        "    allocator.resize_and_rearrange(size2({}, {}));",
+                        size.width, size.height
+                    )?;
                 }
             }
         }
@@ -293,7 +329,7 @@ impl Recording {
                 Event::Allocate(size, ref mut recorded_id) => {
                     let key = *recorded_id;
                     let alloc = allocator.allocate(size);
- 
+
                     let actual_id = alloc.map(|alloc| alloc.id);
                     *recorded_id = actual_id;
 
@@ -301,18 +337,16 @@ impl Recording {
                         id_remap.insert(key, actual_id);
                     }
                 }
-                Event::Deallocate(ref mut recorded_id) => {
-                    match id_remap.remove(recorded_id) {
-                        Some(Some(id)) => {
-                            allocator.deallocate(id);
-                            *recorded_id = id;
-                        }
-                        _ => {
-                            self.events.remove(idx);
-                            continue;
-                        }
+                Event::Deallocate(ref mut recorded_id) => match id_remap.remove(recorded_id) {
+                    Some(Some(id)) => {
+                        allocator.deallocate(id);
+                        *recorded_id = id;
                     }
-                }
+                    _ => {
+                        self.events.remove(idx);
+                        continue;
+                    }
+                },
                 Event::Grow(size) => {
                     allocator.grow(size);
                 }
@@ -342,7 +376,7 @@ fn recording_random_test() {
         &AllocatorOptions {
             snap_size: 5,
             ..DEFAULT_OPTIONS
-        }
+        },
     );
 
     let a = 1103515245;
@@ -377,10 +411,7 @@ fn recording_random_test() {
 
             atlas.deallocate(id);
         } else {
-            let size = size2(
-                (rand() % 300) as i32 + 5,
-                (rand() % 300) as i32 + 5,
-            );
+            let size = size2((rand() % 300) as i32 + 5, (rand() % 300) as i32 + 5);
 
             if let Some(alloc) = atlas.allocate(size) {
                 allocated.push(alloc.id);
@@ -401,7 +432,7 @@ fn recording_random_test() {
     recording.replay().unwrap();
 
     for i in 0..100 {
-        recording.remove_event(i*27);
+        recording.remove_event(i * 27);
     }
 
     recording.replay().unwrap();
