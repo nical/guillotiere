@@ -43,7 +43,7 @@ impl AllocIndex {
 #[repr(C)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct AllocId(u32);
+pub struct AllocId(pub(crate) u32);
 
 impl AllocId {
     pub(crate) fn to_u32(&self) -> u32 {

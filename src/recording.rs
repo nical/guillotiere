@@ -4,6 +4,9 @@ use std::collections::HashMap;
 pub struct RecordingAllocator {
     allocator: AtlasAllocator,
     recorder: Recorder,
+    // Assign unique ids to recorded events. This simplifies a few things, later on.
+    id_map: HashMap<AllocId, AllocId>,
+    next_id: u32,
 }
 
 impl RecordingAllocator {
@@ -16,6 +19,8 @@ impl RecordingAllocator {
                 initial_size: size,
                 options: DEFAULT_OPTIONS,
             },
+            id_map: HashMap::new(),
+            next_id: 0,
         }
     }
 
@@ -28,6 +33,8 @@ impl RecordingAllocator {
                 initial_size: size,
                 options: *options,
             },
+            id_map: HashMap::new(),
+            next_id: 0,
         }
     }
 
@@ -38,17 +45,29 @@ impl RecordingAllocator {
 
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, requested_size: Size) -> Option<Allocation> {
-        let res = self.allocator.allocate(requested_size);
-        self.recorder
-            .record(Event::Allocate(requested_size, res.map(|alloc| alloc.id)));
+        let res = self.allocator.allocate(requested_size).map(|res| {
+            let id = AllocId(self.next_id);
+            self.next_id += 1;
+
+            self.id_map.insert(id, res.id);
+
+            println!(" alloc {:?} (was {:?})", id, res.id);
+
+            Allocation { id, ..res }
+        });
+
+        self.recorder.record(Event::Allocate(requested_size, res.map(|r| r.id)));
 
         res
     }
 
     /// Deallocate a rectangle in the atlas.
     pub fn deallocate(&mut self, node_id: AllocId) {
-        self.recorder.record(Event::Deallocate(node_id));
-        self.allocator.deallocate(node_id);
+        if let Some(actual_id) = self.id_map.get(&node_id) {
+            println!(" dealloc {:?} (was {:?})", node_id, actual_id);
+            self.allocator.deallocate(*actual_id);
+            self.recorder.record(Event::Deallocate(node_id));
+        }
     }
 
     /// Recompute the allocations in the atlas and returns a list of the changes.
@@ -58,18 +77,66 @@ impl RecordingAllocator {
     /// Rearranging the atlas can help reduce fragmentation.
     pub fn rearrange(&mut self) -> ChangeList {
         let changes = self.allocator.rearrange();
-        self.recorder.record(Event::Rearrange(changes.clone()));
+        let remapped = self.remap_changelist(&changes);
 
-        changes
+        self.recorder.record(Event::Rearrange(remapped.clone()));
+
+        remapped
     }
 
     /// Identical to `AtlasAllocator::rearrange`, also allowing to change the size of the atlas.
     pub fn resize_and_rearrange(&mut self, new_size: Size) -> ChangeList {
         let changes = self.allocator.resize_and_rearrange(new_size);
-        self.recorder
-            .record(Event::ResizeAndRearrange(new_size, changes.clone()));
+        let remapped = self.remap_changelist(&changes);
 
-        changes
+        self.recorder.record(Event::ResizeAndRearrange(new_size, remapped.clone()));
+
+        remapped
+    }
+
+    fn remap_changelist(&mut self, changes: &ChangeList) -> ChangeList {
+        let mut remapped = ChangeList {
+            changes: Vec::new(),
+            failures: Vec::new(),
+        };
+
+        let prev_id_map = std::mem::replace(&mut self.id_map, HashMap::new());
+        self.id_map.clear();
+
+        for change in &changes.changes {
+            let mut id = None;
+            for (k, v) in &prev_id_map {
+                if *v == change.old.id {
+                    id = Some(*k);
+                    break;
+                }
+            }
+
+
+            let id = id.unwrap();
+
+            self.id_map.insert(id, change.new.id);
+            remapped.changes.push(Change {
+                old: Allocation { id, ..change.old },
+                new: Allocation { id, ..change.new },
+            });
+        }
+
+        for failure in &changes.failures {
+            let mut id = None;
+            for (k, v) in &prev_id_map {
+                if *v == failure.id {
+                    id = Some(*k);
+                    break;
+                }
+            }
+            remapped.failures.push(Allocation {
+                id : id.unwrap(),
+                rectangle: failure.rectangle,
+            });
+        }
+
+        remapped
     }
 
     pub fn grow(&mut self, new_size: Size) {
