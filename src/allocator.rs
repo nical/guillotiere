@@ -674,6 +674,50 @@ impl AtlasAllocator {
         self.check_tree();
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.nodes[self.root_node.index()].kind == NodeKind::Free
+    }
+
+    /// Drop all rectangles, clearing the atlas to its initial state.
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.nodes.push(Node {
+            parent: AllocIndex::NONE,
+            next_sibling: AllocIndex::NONE,
+            prev_sibling: AllocIndex::NONE,
+            rect: self.size.into(),
+            kind: NodeKind::Free,
+            orientation: Orientation::Vertical,
+        });
+
+        self.root_node = AllocIndex(0);
+
+        self.generations.clear();
+        self.generations.push(Wrapping(0));
+
+        self.unused_nodes = AllocIndex::NONE;
+
+        let bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            &self.size,
+        );
+        for i in 0..NUM_BUCKETS {
+            self.free_lists[i].clear();
+        }
+        self.free_lists[bucket].push(AllocIndex(0));
+    }
+
+    /// Clear the allocator and reset its size and options.
+    pub fn reset(&mut self, size: Size, options: &AllocatorOptions) {
+        self.snap_size = options.snap_size;
+        self.small_size_threshold = options.small_size_threshold;
+        self.large_size_threshold = options.large_size_threshold;
+        self.size = size;
+
+        self.clear();
+    }
+
     /// Recompute the allocations in the atlas and returns a list of the changes.
     ///
     /// Previous ids and rectangles are not valid anymore after this operation as each id/rectangle
@@ -701,29 +745,8 @@ impl AtlasAllocator {
         allocs.sort_by_key(|alloc| alloc.rectangle.size().area());
         allocs.reverse();
 
-        self.nodes.clear();
-        self.generations.clear();
-        self.unused_nodes = AllocIndex::NONE;
-        for i in 0..NUM_BUCKETS {
-            self.free_lists[i].clear();
-        }
-
-        let bucket = free_list_for_size(
-            self.small_size_threshold,
-            self.large_size_threshold,
-            &new_size,
-        );
-        self.free_lists[bucket].push(AllocIndex(0));
-
-        self.nodes.push(Node {
-            parent: AllocIndex::NONE,
-            next_sibling: AllocIndex::NONE,
-            prev_sibling: AllocIndex::NONE,
-            rect: new_size.into(),
-            kind: NodeKind::Free,
-            orientation: Orientation::Vertical,
-        });
-        self.generations.push(Wrapping(0));
+        self.size = new_size;
+        self.clear();
 
         let mut changes = Vec::new();
         let mut failures = Vec::new();
@@ -1177,26 +1200,41 @@ impl SimpleAtlasAllocator {
         }
     }
 
-    /// Clear the allocator.
-    pub fn reset(&mut self, size: Size) {
+    /// Drop all rectangles, clearing the atlas to its initial state.
+    pub fn clear(&mut self) {
+
         for i in 0..NUM_BUCKETS {
             self.free_rects[i].clear();
         }
 
-        let bucket =
-            free_list_for_size(self.small_size_threshold, self.large_size_threshold, &size);
+        let bucket = free_list_for_size(
+            self.small_size_threshold,
+            self.large_size_threshold,
+            &self.size,
+        );
 
-        self.free_rects[bucket].push(size.into());
-        self.size = size;
+        self.free_rects[bucket].push(self.size.into());
     }
 
-    /// Clear the allocator and reset its options.
-    pub fn reset_with_options(&mut self, size: Size, options: &AllocatorOptions) {
+    /// Clear the allocator and reset its size and options.
+    pub fn reset(&mut self, size: Size, options: &AllocatorOptions) {
         self.snap_size = options.snap_size;
         self.small_size_threshold = options.small_size_threshold;
         self.large_size_threshold = options.large_size_threshold;
+        self.size = size;
 
-        self.reset(size);
+        self.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        for b in 0..NUM_BUCKETS {
+            for rect in &self.free_rects[b] {
+                return rect.size() == self.size;
+            }
+        }
+
+        // This should be unreachable.
+        return false;
     }
 
     /// The total size of the atlas.
@@ -1596,6 +1634,33 @@ fn test_grow() {
     let full = atlas.allocate(size2(4000, 4000)).unwrap().id;
     assert!(atlas.allocate(size2(1, 1)).is_none());
     atlas.deallocate(full);
+}
+
+#[test]
+fn clear_empty() {
+    let mut atlas = AtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.is_empty());
+
+    assert!(atlas.allocate(size2(10, 10)).is_some());
+    assert!(!atlas.is_empty());
+
+    atlas.clear();
+    assert!(atlas.is_empty());
+
+    let a = atlas.allocate(size2(10, 10)).unwrap().id;
+    let b = atlas.allocate(size2(20, 20)).unwrap().id;
+    assert!(!atlas.is_empty());
+
+    atlas.deallocate(b);
+    atlas.deallocate(a);
+    assert!(atlas.is_empty());
+
+    atlas.clear();
+    assert!(atlas.is_empty());
+
+    atlas.clear();
+    assert!(atlas.is_empty());
 }
 
 #[test]
