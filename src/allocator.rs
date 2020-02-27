@@ -1477,6 +1477,7 @@ impl ChangeList {
     }
 }
 
+/// Dump a visual representation of the atlas in SVG format.
 pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std::io::Result<()> {
     use svg_fmt::*;
 
@@ -1488,6 +1489,29 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
             h: atlas.size.height as f32
         }
     )?;
+
+    dump_into_svg(atlas, None, output)?;
+
+    writeln!(output, "{}", EndSvg)
+}
+
+/// Dump a visual representation of the atlas in SVG, omitting the beginning and end of the
+/// SVG document, so that it can be included in a larger document.
+///
+/// If a rectange is provided, translate and scale the output to fit it.
+pub fn dump_into_svg(atlas: &AtlasAllocator, rect: Option<&Rectangle>, output: &mut dyn std::io::Write) -> std::io::Result<()> {
+    use svg_fmt::*;
+
+    let (sx, sy, tx, ty) = if let Some(rect) = rect {
+        (
+            rect.size().width as f32 / atlas.size.width as f32,
+            rect.size().height as f32 / atlas.size.height as f32,
+            rect.min.x as f32,
+            rect.min.y as f32,
+        )
+    } else {
+        (1.0, 1.0, 0.0, 0.0)
+    };
 
     for node in &atlas.nodes {
         let color = match node.kind {
@@ -1504,13 +1528,13 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
         writeln!(
             output,
             r#"    {}"#,
-            rectangle(x, y, w, h)
+            rectangle(tx + x * sx, ty + y * sy, w * sx, h * sy)
                 .fill(color)
                 .stroke(Stroke::Color(black(), 1.0))
         )?;
     }
 
-    writeln!(output, "{}", EndSvg)
+    Ok(())
 }
 
 #[test]
