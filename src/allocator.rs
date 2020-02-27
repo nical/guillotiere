@@ -46,8 +46,12 @@ impl AllocIndex {
 pub struct AllocId(pub(crate) u32);
 
 impl AllocId {
-    pub(crate) fn to_u32(&self) -> u32 {
+    pub fn serialize(&self) -> u32 {
         self.0
+    }
+
+    pub fn deserialize(bytes: u32) -> Self {
+        AllocId(bytes)
     }
 }
 
