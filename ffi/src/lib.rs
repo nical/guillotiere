@@ -100,10 +100,34 @@ pub unsafe extern "C" fn guillotiere_atlas_allocator_delete(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn guillotiere_atlas_allocator_clear(
+    atlas: &mut guillotiere_atlas_allocator_t,
+) {
+    atlas.clear();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn guillotiere_atlas_allocator_reset(
+    atlas: &mut guillotiere_atlas_allocator_t,
+    size: guillotiere_size_t,
+    options: &guillotiere_allocator_options_t,
+) {
+    let options = from_ffi_options(options);
+    atlas.reset(transmute(size), &options);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn guillotiere_atlas_allocator_size(
     atlas: &guillotiere_atlas_allocator_t,
 ) -> guillotiere_size_t {
     transmute(atlas.size())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn guillotiere_atlas_allocator_is_empty(
+    atlas: &mut guillotiere_atlas_allocator_t,
+) -> bool {
+    atlas.is_empty()
 }
 
 #[no_mangle]
@@ -215,6 +239,30 @@ pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_delete(
     atlas: *mut guillotiere_simple_atlas_allocator_t,
 ) {
     Box::from_raw(atlas);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_clear(
+    atlas: &mut guillotiere_simple_atlas_allocator_t,
+) {
+    atlas.clear();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_reset(
+    atlas: &mut guillotiere_simple_atlas_allocator_t,
+    size: guillotiere_size_t,
+    options: &guillotiere_allocator_options_t,
+) {
+    let options = from_ffi_options(options);
+    atlas.reset(transmute(size), &options);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_is_empty(
+    atlas: &mut guillotiere_simple_atlas_allocator_t,
+) -> bool {
+    atlas.is_empty()
 }
 
 #[no_mangle]
