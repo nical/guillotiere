@@ -1482,7 +1482,7 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
 
     writeln!(
         output,
-        "{:?}",
+        "{}",
         BeginSvg {
             w: atlas.size.width as f32,
             h: atlas.size.height as f32
@@ -1503,14 +1503,14 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
 
         writeln!(
             output,
-            r#"    {:?}"#,
+            r#"    {}"#,
             rectangle(x, y, w, h)
                 .fill(color)
                 .stroke(Stroke::Color(black(), 1.0))
         )?;
     }
 
-    writeln!(output, "{:?}", EndSvg)
+    writeln!(output, "{}", EndSvg)
 }
 
 #[test]
