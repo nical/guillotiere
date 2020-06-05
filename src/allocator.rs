@@ -1319,6 +1319,8 @@ impl SimpleAtlasAllocator {
         let (split_rect, leftover_rect, _) =
             guillotine_rect(&new_size.into(), self.size, Orientation::Vertical);
 
+        self.size = new_size;
+
         self.add_free_rect(&split_rect);
         self.add_free_rect(&leftover_rect);
     }
