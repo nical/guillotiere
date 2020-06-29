@@ -9,6 +9,7 @@ matrix:
       env:
         - RUST_BACKTRACE=1
       script:
+        - cargo fmt --all -- --check
         - cargo test --all --features=checks
 
     # Nightly tests
