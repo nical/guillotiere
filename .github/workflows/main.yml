@@ -1,0 +1,56 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  ci:
+    env:
+        RUST_BACKTRACE: 1
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --verbose
+
+  wasm:
+    env:
+        RUST_BACKTRACE: 1
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          target: "wasm32-unknown-unknown"
+
+      - name: Compile and test wasm
+        run: cargo build --target wasm32-unknown-unknown
