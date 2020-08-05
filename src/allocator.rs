@@ -442,7 +442,7 @@ impl AtlasAllocator {
 
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: Size) -> Option<Allocation> {
-        if requested_size.is_empty_or_negative() {
+        if requested_size.is_empty() {
             return None;
         }
 
@@ -1244,7 +1244,7 @@ impl SimpleAtlasAllocator {
 
     /// Allocate a rectangle in the atlas.
     pub fn allocate(&mut self, mut requested_size: Size) -> Option<Rectangle> {
-        if requested_size.is_empty_or_negative() {
+        if requested_size.is_empty() {
             return None;
         }
 
