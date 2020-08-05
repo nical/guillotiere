@@ -401,7 +401,7 @@ fn rearrange(args: &ArgMatches) {
                 continue;
             }
             println!(
-                " - Moved {}: {} -> {}",
+                " - Moved {}: {:?} -> {:?}",
                 name, change.old.rectangle, change.new.rectangle
             );
             new_names.insert(name.clone(), change.new.id);

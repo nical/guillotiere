@@ -14,9 +14,9 @@ checks = []
 serialization = ["serde", "euclid/serde"]
 
 [dependencies]
-euclid = "0.20"
+euclid = "0.22.0"
 serde = { version = "1.0", optional = true, features = ["serde_derive"] }
-svg_fmt = "0.4.0"
+svg_fmt = "0.4.1"
 
 [workspace]
 members = ["cli", "ffi"]
