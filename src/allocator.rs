@@ -1,7 +1,5 @@
 use crate::{Rectangle, Size};
-#[cfg(test)]
-use euclid::size2;
-use euclid::{point2, vec2};
+use euclid::{vec2, point2, size2};
 
 use std::num::Wrapping;
 
@@ -101,10 +99,10 @@ struct Node {
 pub struct AllocatorOptions {
     /// Round the rectangle sizes up to a multiple of this value.
     ///
-    /// This value must be superior to zero.
+    /// Width and height alignments must be superior to zero.
     ///
-    /// Default value: 1,
-    pub snap_size: i32,
+    /// Default value: (1, 1),
+    pub alignment: Size,
 
     /// Value below which a size is considered small.
     ///
@@ -124,7 +122,7 @@ pub struct AllocatorOptions {
 }
 
 pub const DEFAULT_OPTIONS: AllocatorOptions = AllocatorOptions {
-    snap_size: 1,
+    alignment: size2(1,  1),
     large_size_threshold: 256,
     small_size_threshold: 32,
 };
@@ -333,7 +331,7 @@ pub struct AtlasAllocator {
     generations: Vec<Wrapping<u8>>,
 
     /// See `AllocatorOptions`.
-    snap_size: i32,
+    alignment: Size,
 
     /// See `AllocatorOptions`.
     small_size_threshold: i32,
@@ -402,7 +400,8 @@ impl AtlasAllocator {
 
     /// Create an atlas allocator with the provided options.
     pub fn with_options(size: Size, options: &AllocatorOptions) -> Self {
-        assert!(options.snap_size > 0);
+        assert!(options.alignment.width > 0);
+        assert!(options.alignment.height > 0);
         assert!(size.width > 0);
         assert!(size.height > 0);
         assert!(options.large_size_threshold >= options.small_size_threshold);
@@ -427,7 +426,7 @@ impl AtlasAllocator {
             free_lists,
             generations: vec![Wrapping(0)],
             unused_nodes: AllocIndex::NONE,
-            snap_size: options.snap_size,
+            alignment: options.alignment,
             small_size_threshold: options.small_size_threshold,
             large_size_threshold: options.large_size_threshold,
             size,
@@ -446,8 +445,8 @@ impl AtlasAllocator {
             return None;
         }
 
-        adjust_size(self.snap_size, &mut requested_size.width);
-        adjust_size(self.snap_size, &mut requested_size.height);
+        adjust_size(self.alignment.width, &mut requested_size.width);
+        adjust_size(self.alignment.height, &mut requested_size.height);
 
         // Find a suitable free rect.
         let chosen_id = self.find_suitable_rect(&requested_size);
@@ -710,7 +709,7 @@ impl AtlasAllocator {
 
     /// Clear the allocator and reset its size and options.
     pub fn reset(&mut self, size: Size, options: &AllocatorOptions) {
-        self.snap_size = options.snap_size;
+        self.alignment = options.alignment;
         self.small_size_threshold = options.small_size_threshold;
         self.large_size_threshold = options.large_size_threshold;
         self.size = size;
@@ -1168,7 +1167,7 @@ impl std::ops::Index<AllocId> for AtlasAllocator {
 /// A simpler atlas allocator implementation that can allocate rectangles but not deallocate them.
 pub struct SimpleAtlasAllocator {
     free_rects: [Vec<Rectangle>; 3],
-    snap_size: i32,
+    alignment: Size,
     small_size_threshold: i32,
     large_size_threshold: i32,
     size: Size,
@@ -1193,7 +1192,7 @@ impl SimpleAtlasAllocator {
 
         SimpleAtlasAllocator {
             free_rects,
-            snap_size: options.snap_size,
+            alignment: options.alignment,
             small_size_threshold: options.small_size_threshold,
             large_size_threshold: options.large_size_threshold,
             size,
@@ -1218,7 +1217,7 @@ impl SimpleAtlasAllocator {
 
     /// Clear the allocator and reset its size and options.
     pub fn reset(&mut self, size: Size, options: &AllocatorOptions) {
-        self.snap_size = options.snap_size;
+        self.alignment = options.alignment;
         self.small_size_threshold = options.small_size_threshold;
         self.large_size_threshold = options.large_size_threshold;
         self.size = size;
@@ -1248,8 +1247,8 @@ impl SimpleAtlasAllocator {
             return None;
         }
 
-        adjust_size(self.snap_size, &mut requested_size.width);
-        adjust_size(self.snap_size, &mut requested_size.height);
+        adjust_size(self.alignment.width, &mut requested_size.width);
+        adjust_size(self.alignment.height, &mut requested_size.height);
 
         let ideal_bucket = free_list_for_size(
             self.small_size_threshold,
@@ -1347,7 +1346,7 @@ impl SimpleAtlasAllocator {
     }
 
     fn add_free_rect(&mut self, rect: &Rectangle) {
-        if rect.size().width < self.snap_size || rect.size().height < self.snap_size {
+        if rect.size().width < self.alignment.width || rect.size().height < self.alignment.height {
             return;
         }
 
@@ -1361,10 +1360,10 @@ impl SimpleAtlasAllocator {
     }
 }
 
-fn adjust_size(snap_size: i32, size: &mut i32) {
-    let rem = *size % snap_size;
+fn adjust_size(alignment: i32, size: &mut i32) {
+    let rem = *size % alignment;
     if rem > 0 {
-        *size += snap_size - rem;
+        *size += alignment - rem;
     }
 }
 
@@ -1578,7 +1577,7 @@ fn atlas_random_test() {
     let mut atlas = AtlasAllocator::with_options(
         size2(1000, 1000),
         &AllocatorOptions {
-            snap_size: 5,
+            alignment: size2(5, 2),
             ..DEFAULT_OPTIONS
         },
     );

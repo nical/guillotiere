@@ -52,10 +52,24 @@ fn main() {
                 .takes_value(true)
                 .required(false)
             )
-            .arg(Arg::with_name("SNAP")
-                .long("snap")
-                .help("Round up the size of the allocated rectangle to a multiple of the provided value.")
-                .value_name("SNAP")
+            .arg(Arg::with_name("ALIGN")
+                .long("align")
+                .help("Round up the width and height of the allocated rectangle to a multiple of the provided value.")
+                .value_name("ALIGN")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("ALIGN_WIDTH")
+                .long("align-width")
+                .help("Round up the width of the allocated rectangle to a multiple of the provided value.")
+                .value_name("ALIGN_WIDTH")
+                .takes_value(true)
+                .required(false)
+            )
+            .arg(Arg::with_name("ALIGN_HEIGHT")
+                .long("align-height")
+                .help("Round up the height of the allocated rectangle to a multiple of the provided value.")
+                .value_name("ALIGN_HEIGHT")
                 .takes_value(true)
                 .required(false)
             )
@@ -291,10 +305,16 @@ fn init(args: &ArgMatches) {
     let default_options = guillotiere::DEFAULT_OPTIONS;
 
     let options = guillotiere::AllocatorOptions {
-        snap_size: args
-            .value_of("SNAP")
-            .map(|s| s.parse::<i32>().unwrap())
-            .unwrap_or(default_options.snap_size),
+        alignment: size2(
+            args.value_of("ALIGN_WIDTH")
+                .or(args.value_of("ALIGN"))
+                .map(|s| s.parse::<i32>().unwrap())
+                .unwrap_or(default_options.alignment.width),
+            args.value_of("ALIGN_HEIGHT")
+                .or(args.value_of("ALIGN"))
+                .map(|s| s.parse::<i32>().unwrap())
+                .unwrap_or(default_options.alignment.height),
+        ),
         small_size_threshold: args
             .value_of("SMALL")
             .map(|s| s.parse::<i32>().unwrap())
