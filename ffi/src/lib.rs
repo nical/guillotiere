@@ -60,14 +60,15 @@ pub struct guillotiere_allocation_t {
 #[repr(C)]
 #[no_mangle]
 pub struct guillotiere_allocator_options_t {
-    pub snap_size: i32,
+    pub width_alignment: i32,
+    pub height_alignment: i32,
     pub small_size_threshold: i32,
     pub large_size_threshold: i32,
 }
 
 fn from_ffi_options(options: &guillotiere_allocator_options_t) -> AllocatorOptions {
     AllocatorOptions {
-        snap_size: options.snap_size,
+        alignment: size2(options.width_alignment, options.height_alignment),
         small_size_threshold: options.small_size_threshold,
         large_size_threshold: options.large_size_threshold,
     }
@@ -307,7 +308,8 @@ pub unsafe extern "C" fn guillotiere_allocator_options_default(
     options: &mut guillotiere_allocator_options_t,
 ) {
     *options = guillotiere_allocator_options_t {
-        snap_size: DEFAULT_OPTIONS.snap_size,
+        width_alignment: DEFAULT_OPTIONS.alignment.width,
+        height_alignment: DEFAULT_OPTIONS.alignment.height,
         small_size_threshold: DEFAULT_OPTIONS.small_size_threshold,
         large_size_threshold: DEFAULT_OPTIONS.large_size_threshold,
     };
