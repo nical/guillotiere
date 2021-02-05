@@ -195,7 +195,7 @@ impl Default for AllocatorOptions {
 ///        |       |     |
 ///      +-+-+ . +-+-+. .|. vertical
 ///      |   |   |   |   |
-///      #   h   J   K   |
+///      #   H   J   K   |
 ///      |               |
 ///  +-+-+-+-+. . . . . .|. horizontal
 ///  | | | | |           |
