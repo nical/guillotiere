@@ -195,11 +195,11 @@ impl Default for AllocatorOptions {
 ///        |       |     |
 ///      +-+-+ . +-+-+. .|. vertical
 ///      |   |   |   |   |
-///      #   h   J   K   |
+///      #   H   J   K   |
 ///      |               |
 ///  +-+-+-+-+. . . . . .|. horizontal
 ///  | | | | |           |
-///  c D E F G           |
+///  C D E F G           |
 /// ```
 ///
 /// Where container nodes are represented with "#".
@@ -360,7 +360,7 @@ pub struct AtlasAllocator {
 //              |                               \
 //              | parent                         \ parent
 //           +---------+ next sibling         +---------+ next sibling
-// ... ------|Alloc    |---------------------->|container|---> (AllocIndex::NONE)
+// ... ------|Alloc    |---------------------->|Container|---> (AllocIndex::NONE)
 //     ----->|         |<----------------------|         |
 //           +---------+     previous sibling +---------+
 //                                               ^ ^ ^
@@ -880,7 +880,7 @@ impl AtlasAllocator {
             }
 
             // That second loop might not be necessary, I think that the root is always the first
-            // sibling
+            // sibling.
             let mut iter = self.nodes[old_root.index()].next_sibling;
             while iter != AllocIndex::NONE {
                 self.nodes[iter.index()].parent = new_root;
