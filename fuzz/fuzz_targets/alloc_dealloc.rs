@@ -32,6 +32,13 @@ fuzz_target!(|events: Vec<Evt>| {
                 }
             }
         }
+
+        let mut count = 0;
+        atlas.for_each_allocated_rectangle(&mut |_id: AllocId, _r: &Rectangle| {
+            count += 1;
+        });
+
+        assert_eq!(count, allocations.len());
     }
 
     for id in allocations {

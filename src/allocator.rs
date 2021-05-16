@@ -598,6 +598,8 @@ impl AtlasAllocator {
             }
         }
 
+        assert_eq!(self.nodes[allocated_id.index()].kind, NodeKind::Alloc);
+
         if split_id.is_some() {
             self.add_free_rect(split_id, &split_rect.size());
         }
@@ -625,7 +627,6 @@ impl AtlasAllocator {
         assert!(node_id.index() < self.nodes.len());
         assert_eq!(self.nodes[node_id.index()].kind, NodeKind::Alloc);
 
-        //println!("deallocate rect {} #{:?}", self.nodes[node_id.index()].rect, node_id);
         self.nodes[node_id.index()].kind = NodeKind::Free;
 
         loop {
@@ -652,7 +653,7 @@ impl AtlasAllocator {
                 && self.nodes[node_id.index()].next_sibling.is_none()
                 && parent.is_some()
             {
-                //println!("collapse #{:?} into parent #{:?}", node_id, parent);
+                debug_assert_eq!(self.nodes[parent.index()].kind, NodeKind::Container);
 
                 self.mark_node_unused(node_id);
 
@@ -674,7 +675,9 @@ impl AtlasAllocator {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.nodes[self.root_node.index()].kind == NodeKind::Free
+        let root = &self.nodes[self.root_node.index()];
+
+        root.kind == NodeKind::Free && root.next_sibling.is_none()
     }
 
     /// Drop all rectangles, clearing the atlas to its initial state.
@@ -927,7 +930,7 @@ impl AtlasAllocator {
             requested_size,
         );
 
-        let use_worst_fit = ideal_bucket != SMALL_BUCKET;
+        let use_worst_fit = ideal_bucket == LARGE_BUCKET;
         for bucket in ideal_bucket..NUM_BUCKETS {
             let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
             let mut candidate = None;
@@ -954,11 +957,10 @@ impl AtlasAllocator {
                     if dx == 0 || dy == 0 {
                         // Perfect fit!
                         candidate = Some((id, freelist_idx));
-                        //println!("perfect fit!");
                         break;
                     }
 
-                    // Favor the largest minimum dimmension, except for small
+                    // Favor the largest minimum dimension, except for small
                     // allocations.
                     let score = i32::min(dx, dy);
                     if (use_worst_fit && score > candidate_score)
@@ -986,6 +988,7 @@ impl AtlasAllocator {
         if idx.index() < self.nodes.len() {
             self.unused_nodes = self.nodes[idx.index()].next_sibling;
             self.generations[idx.index()] += Wrapping(1);
+            debug_assert_eq!(self.nodes[idx.index()].kind, NodeKind::Unused);
             return idx;
         }
 
@@ -1039,7 +1042,7 @@ impl AtlasAllocator {
         }
 
         if self.nodes[next.index()].prev_sibling != id {
-            //println!("error: #{:?}'s next sibling #{:?} has prev sibling #{:?}", id, next, self.nodes[next.index()].prev_sibling);
+            panic!("error: #{:?}'s next sibling #{:?} has prev sibling #{:?}", id, next, self.nodes[next.index()].prev_sibling);
         }
         assert_eq!(self.nodes[next.index()].prev_sibling, id);
 
@@ -1076,6 +1079,9 @@ impl AtlasAllocator {
             let node = &self.nodes[node_idx];
 
             if node.kind == NodeKind::Unused {
+                if node.next_sibling.is_some() {
+                    assert_eq!(self.nodes[node.next_sibling.index()].kind, NodeKind::Unused);
+                }
                 continue;
             }
 
@@ -1083,6 +1089,7 @@ impl AtlasAllocator {
             while iter.is_some() {
                 assert_eq!(self.nodes[iter.index()].orientation, node.orientation);
                 assert_eq!(self.nodes[iter.index()].parent, node.parent);
+                assert!(self.nodes[iter.index()].kind != NodeKind::Unused);
                 let next = self.nodes[iter.index()].next_sibling;
 
                 #[cfg(feature = "checks")]
@@ -1093,7 +1100,7 @@ impl AtlasAllocator {
 
             if node.parent.is_some() {
                 if self.nodes[node.parent.index()].kind != NodeKind::Container {
-                    //println!("error: child: {:?} parent: {:?}", node_idx, node.parent);
+                    panic!("error: child: {:?} parent: {:?}", node_idx, node.parent);
                 }
                 assert_eq!(
                     self.nodes[node.parent.index()].orientation,
@@ -1113,19 +1120,21 @@ impl AtlasAllocator {
 
     // Merge `next` into `node` and append `next` to a list of available `nodes`vector slots.
     fn merge_siblings(&mut self, node: AllocIndex, next: AllocIndex, orientation: Orientation) {
+        debug_assert_eq!(self.nodes[node.index()].kind, NodeKind::Free);
+        debug_assert_eq!(self.nodes[next.index()].kind, NodeKind::Free);
         let r1 = self.nodes[node.index()].rect;
         let r2 = self.nodes[next.index()].rect;
         //println!("merge {} #{:?} and {} #{:?}       {:?}", r1, node, r2, next, orientation);
         let merge_size = self.nodes[next.index()].rect.size();
         match orientation {
             Orientation::Horizontal => {
-                assert_eq!(r1.min.y, r2.min.y);
-                assert_eq!(r1.max.y, r2.max.y);
+                debug_assert_eq!(r1.min.y, r2.min.y);
+                debug_assert_eq!(r1.max.y, r2.max.y);
                 self.nodes[node.index()].rect.max.x += merge_size.width;
             }
             Orientation::Vertical => {
-                assert_eq!(r1.min.x, r2.min.x);
-                assert_eq!(r1.max.x, r2.max.x);
+                debug_assert_eq!(r1.min.x, r2.min.x);
+                debug_assert_eq!(r1.max.x, r2.max.x);
                 self.nodes[node.index()].rect.max.y += merge_size.height;
             }
         }
@@ -1256,7 +1265,7 @@ impl SimpleAtlasAllocator {
             &requested_size,
         );
 
-        let use_worst_fit = ideal_bucket != SMALL_BUCKET;
+        let use_worst_fit = ideal_bucket == LARGE_BUCKET;
 
         let mut chosen_rect = None;
         for bucket in ideal_bucket..NUM_BUCKETS {
@@ -1274,8 +1283,6 @@ impl SimpleAtlasAllocator {
                         break;
                     }
 
-                    // Favor the largest minimum dimmension, except for small
-                    // allocations.
                     let score = i32::min(dx, dy);
                     if (use_worst_fit && score > candidate_score)
                         || (!use_worst_fit && score < candidate_score)
