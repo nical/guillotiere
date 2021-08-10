@@ -476,9 +476,10 @@ impl AtlasAllocator {
         let allocated_id;
         let split_id;
         let leftover_id;
+
         //println!("{:?} -> {:?}", current_orientation, orientation);
         if orientation == current_orientation {
-            if split_rect.size().area() > 0 {
+            if !split_rect.is_empty() {
                 let next_sibling = chosen_node.next_sibling;
 
                 split_id = self.new_node();
@@ -499,7 +500,7 @@ impl AtlasAllocator {
                 split_id = AllocIndex::NONE;
             }
 
-            if leftover_rect.size().area() > 0 {
+            if !leftover_rect.is_empty() {
                 self.nodes[chosen_id.index()].kind = NodeKind::Container;
 
                 allocated_id = self.new_node();
@@ -534,7 +535,7 @@ impl AtlasAllocator {
         } else {
             self.nodes[chosen_id.index()].kind = NodeKind::Container;
 
-            if split_rect.size().area() > 0 {
+            if !split_rect.is_empty() {
                 split_id = self.new_node();
                 self.nodes[split_id.index()] = Node {
                     parent: chosen_id,
@@ -548,7 +549,7 @@ impl AtlasAllocator {
                 split_id = AllocIndex::NONE;
             }
 
-            if leftover_rect.size().area() > 0 {
+            if !leftover_rect.is_empty() {
                 let container_id = self.new_node();
                 self.nodes[container_id.index()] = Node {
                     parent: chosen_id,
@@ -744,7 +745,7 @@ impl AtlasAllocator {
             });
         }
 
-        allocs.sort_by_key(|alloc| alloc.rectangle.size().area());
+        allocs.sort_by_key(|alloc| safe_area(&alloc.rectangle));
         allocs.reverse();
 
         self.size = new_size;
@@ -808,12 +809,12 @@ impl AtlasAllocator {
                 let rect = match root_orientation {
                     Orientation::Horizontal => {
                         let min = point2(node.rect.max.x, node.rect.min.y);
-                        let max = min + vec2(dx, node.rect.size().height);
+                        let max = min + vec2(dx, node.rect.height());
                         Rectangle { min, max }
                     }
                     Orientation::Vertical => {
                         let min = point2(node.rect.min.x, node.rect.max.y);
-                        let max = min + vec2(node.rect.size().width, dy);
+                        let max = min + vec2(node.rect.width(), dy);
                         Rectangle { min, max }
                     }
                 };
@@ -1273,8 +1274,8 @@ impl SimpleAtlasAllocator {
             let mut candidate = None;
 
             for (index, rect) in self.free_rects[bucket].iter().enumerate() {
-                let dx = rect.size().width - requested_size.width;
-                let dy = rect.size().height - requested_size.height;
+                let dx = rect.width() - requested_size.width;
+                let dy = rect.height() - requested_size.height;
 
                 if dx >= 0 && dy >= 0 {
                     if dx == 0 || dy == 0 {
@@ -1353,7 +1354,7 @@ impl SimpleAtlasAllocator {
     }
 
     fn add_free_rect(&mut self, rect: &Rectangle) {
-        if rect.size().width < self.alignment.width || rect.size().height < self.alignment.height {
+        if rect.width() < self.alignment.width || rect.height() < self.alignment.height {
             return;
         }
 
@@ -1372,6 +1373,11 @@ fn adjust_size(alignment: i32, size: &mut i32) {
     if rem > 0 {
         *size += alignment - rem;
     }
+}
+
+/// Compute the area, saturating at i32::MAX instead of overflowing.
+fn safe_area(rect: &Rectangle) -> i32 {
+    rect.width().checked_mul(rect.height()).unwrap_or(std::i32::MAX)
 }
 
 fn guillotine_rect(
@@ -1435,9 +1441,7 @@ fn guillotine_rect(
         orientation = default_orientation;
         split_rect = Rectangle::zero();
         leftover_rect = Rectangle::zero();
-    } else if candidate_leftover_rect_to_right.size().area()
-        > candidate_leftover_rect_to_bottom.size().area()
-    {
+    } else if safe_area(&candidate_leftover_rect_to_right) > safe_area(&candidate_leftover_rect_to_bottom) {
         leftover_rect = candidate_leftover_rect_to_bottom;
         split_rect = Rectangle {
             min: candidate_leftover_rect_to_right.min,
@@ -1512,8 +1516,8 @@ pub fn dump_into_svg(atlas: &AtlasAllocator, rect: Option<&Rectangle>, output: &
 
     let (sx, sy, tx, ty) = if let Some(rect) = rect {
         (
-            rect.size().width as f32 / atlas.size.width as f32,
-            rect.size().height as f32 / atlas.size.height as f32,
+            rect.width() as f32 / atlas.size.width as f32,
+            rect.height() as f32 / atlas.size.height as f32,
             rect.min.x as f32,
             rect.min.y as f32,
         )
@@ -1739,4 +1743,12 @@ fn allocate_negative() {
     assert!(atlas.allocate(size2(-1, -1)).is_none());
 
     assert!(atlas.allocate(size2(-167114179, -718142)).is_none());
+}
+
+#[test]
+fn issue_25() {
+    let mut allocator = AtlasAllocator::new(Size::new(65536, 65536));
+    allocator.allocate(Size::new(2,2));
+    allocator.allocate(Size::new(65500,2));
+    allocator.allocate(Size::new(2, 65500));
 }
