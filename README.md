@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://crates.io/crates/guillotiere">
-      <img src="http://meritbadge.herokuapp.com/guillotiere" alt="crates.io">
+      <img src="https://img.shields.io/crates/v/guillotiere.svg" alt="crates.io">
   </a>
   <a href="https://travis-ci.org/nical/guillotiere">
       <img src="https://img.shields.io/travis/nical/guillotiere/master.svg" alt="Travis Build Status">
