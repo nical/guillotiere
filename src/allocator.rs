@@ -1510,7 +1510,7 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
 /// Dump a visual representation of the atlas in SVG, omitting the beginning and end of the
 /// SVG document, so that it can be included in a larger document.
 ///
-/// If a rectange is provided, translate and scale the output to fit it.
+/// If a rectangle is provided, translate and scale the output to fit it.
 pub fn dump_into_svg(atlas: &AtlasAllocator, rect: Option<&Rectangle>, output: &mut dyn std::io::Write) -> std::io::Result<()> {
     use svg_fmt::*;
 
