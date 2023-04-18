@@ -70,7 +70,7 @@ guillotiere svg path/to/file.svg
 
 ### list
 
-This command dumps a list od the allocated and free rectangles in stdout.
+This command dumps a list of the allocated and free rectangles in stdout.
 
 ```bash
 guillotiere list
