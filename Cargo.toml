@@ -11,7 +11,7 @@ keywords = ["2d", "graphics"]
 
 [features]
 default = ["std"]
-std = ["euclid/std", "serde/std"]
+std = ["euclid/std", "serde?/std"]
 checks = []
 serialization = ["serde", "euclid/serde"]
 
