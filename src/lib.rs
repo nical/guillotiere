@@ -1,3 +1,7 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate core;
+extern crate alloc;
+
 #[cfg(feature = "serialization")]
 #[macro_use]
 pub extern crate serde;
