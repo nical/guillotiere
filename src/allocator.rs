@@ -1567,3 +1567,207 @@ impl<'a> fmt::Display for DumpIntoSvg<'a> {
         Ok(())
     }
 }
+
+#[test]
+fn atlas_basic() {
+    let mut atlas = AtlasAllocator::new(size2(1000, 1000));
+
+    let full = atlas.allocate(size2(1000, 1000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+
+    atlas.deallocate(full);
+
+    let a = atlas.allocate(size2(100, 1000)).unwrap().id;
+    let b = atlas.allocate(size2(900, 200)).unwrap().id;
+    let c = atlas.allocate(size2(300, 200)).unwrap().id;
+    let d = atlas.allocate(size2(200, 300)).unwrap().id;
+    let e = atlas.allocate(size2(100, 300)).unwrap().id;
+    let f = atlas.allocate(size2(100, 300)).unwrap().id;
+    let g = atlas.allocate(size2(100, 300)).unwrap().id;
+
+    atlas.deallocate(b);
+    atlas.deallocate(f);
+    atlas.deallocate(c);
+    atlas.deallocate(e);
+    let h = atlas.allocate(size2(500, 200)).unwrap().id;
+    atlas.deallocate(a);
+    let i = atlas.allocate(size2(500, 200)).unwrap().id;
+    atlas.deallocate(g);
+    atlas.deallocate(h);
+    atlas.deallocate(d);
+    atlas.deallocate(i);
+
+    let full = atlas.allocate(size2(1000, 1000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+    atlas.deallocate(full);
+}
+
+#[test]
+fn atlas_random_test() {
+    let mut atlas = AtlasAllocator::with_options(
+        size2(1000, 1000),
+        &AllocatorOptions {
+            alignment: size2(5, 2),
+            ..DEFAULT_OPTIONS
+        },
+    );
+
+    let a = 1103515245;
+    let c = 12345;
+    let m = usize::pow(2, 31);
+    let mut seed: usize = 37;
+
+    let mut rand = || {
+        seed = (a * seed + c) % m;
+        seed
+    };
+
+    let mut n: usize = 0;
+    let mut misses: usize = 0;
+
+    let mut allocated = Vec::new();
+    for _ in 0..500000 {
+        if rand() % 5 > 2 && !allocated.is_empty() {
+            // deallocate something
+            let nth = rand() % allocated.len();
+            let id = allocated[nth];
+            allocated.remove(nth);
+
+            atlas.deallocate(id);
+        } else {
+            // allocate something
+            let size = size2((rand() % 300) as i32 + 5, (rand() % 300) as i32 + 5);
+
+            if let Some(alloc) = atlas.allocate(size) {
+                allocated.push(alloc.id);
+                n += 1;
+            } else {
+                misses += 1;
+            }
+        }
+    }
+
+    while let Some(id) = allocated.pop() {
+        atlas.deallocate(id);
+    }
+
+    println!("added/removed {} rectangles, {} misses", n, misses);
+    println!(
+        "nodes.cap: {}, free_list.cap: {}/{}/{}",
+        atlas.nodes.capacity(),
+        atlas.free_lists[LARGE_BUCKET].capacity(),
+        atlas.free_lists[MEDIUM_BUCKET].capacity(),
+        atlas.free_lists[SMALL_BUCKET].capacity(),
+    );
+
+    let full = atlas.allocate(size2(1000, 1000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+    atlas.deallocate(full);
+}
+
+#[test]
+fn test_grow() {
+    let mut atlas = AtlasAllocator::new(size2(1000, 1000));
+
+    atlas.grow(size2(2000, 2000));
+
+    let full = atlas.allocate(size2(2000, 2000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+    atlas.deallocate(full);
+
+    let a = atlas.allocate(size2(100, 100)).unwrap().id;
+
+    atlas.grow(size2(3000, 3000));
+
+    let b = atlas.allocate(size2(1000, 2900)).unwrap().id;
+
+    atlas.grow(size2(4000, 4000));
+
+    atlas.deallocate(b);
+    atlas.deallocate(a);
+
+    let full = atlas.allocate(size2(4000, 4000)).unwrap().id;
+    assert!(atlas.allocate(size2(1, 1)).is_none());
+    atlas.deallocate(full);
+}
+
+#[test]
+fn clear_empty() {
+    let mut atlas = AtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.is_empty());
+
+    assert!(atlas.allocate(size2(10, 10)).is_some());
+    assert!(!atlas.is_empty());
+
+    atlas.clear();
+    assert!(atlas.is_empty());
+
+    let a = atlas.allocate(size2(10, 10)).unwrap().id;
+    let b = atlas.allocate(size2(20, 20)).unwrap().id;
+    assert!(!atlas.is_empty());
+
+    atlas.deallocate(b);
+    atlas.deallocate(a);
+    assert!(atlas.is_empty());
+
+    atlas.clear();
+    assert!(atlas.is_empty());
+
+    atlas.clear();
+    assert!(atlas.is_empty());
+}
+
+#[test]
+fn simple_atlas() {
+    let mut atlas = SimpleAtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.allocate(size2(1, 1001)).is_none());
+    assert!(atlas.allocate(size2(1001, 1)).is_none());
+
+    let mut rectangles = Vec::new();
+    rectangles.push(atlas.allocate(size2(100, 1000)).unwrap());
+    rectangles.push(atlas.allocate(size2(900, 200)).unwrap());
+    rectangles.push(atlas.allocate(size2(300, 200)).unwrap());
+    rectangles.push(atlas.allocate(size2(200, 300)).unwrap());
+    rectangles.push(atlas.allocate(size2(100, 300)).unwrap());
+    rectangles.push(atlas.allocate(size2(100, 300)).unwrap());
+    rectangles.push(atlas.allocate(size2(100, 300)).unwrap());
+    assert!(atlas.allocate(size2(800, 800)).is_none());
+
+    for i in 0..rectangles.len() {
+        for j in 0..rectangles.len() {
+            if i == j {
+                continue;
+            }
+
+            assert!(!rectangles[i].intersects(&rectangles[j]));
+        }
+    }
+}
+
+#[test]
+fn allocate_zero() {
+    let mut atlas = SimpleAtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.allocate(size2(0, 0)).is_none());
+}
+
+#[test]
+fn allocate_negative() {
+    let mut atlas = SimpleAtlasAllocator::new(size2(1000, 1000));
+
+    assert!(atlas.allocate(size2(-1, 1)).is_none());
+    assert!(atlas.allocate(size2(1, -1)).is_none());
+    assert!(atlas.allocate(size2(-1, -1)).is_none());
+
+    assert!(atlas.allocate(size2(-167114179, -718142)).is_none());
+}
+
+#[test]
+fn issue_25() {
+    let mut allocator = AtlasAllocator::new(Size::new(65536, 65536));
+    allocator.allocate(Size::new(2,2));
+    allocator.allocate(Size::new(65500,2));
+    allocator.allocate(Size::new(2, 65500));
+}
