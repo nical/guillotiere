@@ -1,7 +1,12 @@
 //! C-compatible foreign function interface for guillotiere, that can be easily fed to cbindgen.
 
+#![no_std]
+extern crate alloc;
+
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use guillotiere::*;
-use std::mem::transmute;
+use core::mem::transmute;
 
 use guillotiere::AtlasAllocator as guillotiere_atlas_allocator_t;
 use guillotiere::ChangeList as guillotiere_change_list_t;
@@ -97,7 +102,7 @@ pub unsafe extern "C" fn guillotiere_atlas_allocator_with_options(
 pub unsafe extern "C" fn guillotiere_atlas_allocator_delete(
     atlas: *mut guillotiere_atlas_allocator_t,
 ) {
-    Box::from_raw(atlas);
+    let _ = Box::from_raw(atlas);
 }
 
 #[no_mangle]
@@ -166,7 +171,7 @@ pub unsafe extern "C" fn guillotiere_atlas_allocator_rearrange(
     atlas: &mut guillotiere_atlas_allocator_t,
     change_list: &mut guillotiere_change_list_t,
 ) {
-    std::mem::swap(change_list, &mut atlas.rearrange());
+    core::mem::swap(change_list, &mut atlas.rearrange());
 }
 
 #[no_mangle]
@@ -175,7 +180,7 @@ pub unsafe extern "C" fn guillotiere_atlas_allocator_resize_and_rearrange(
     new_size: guillotiere_size_t,
     change_list: &mut guillotiere_change_list_t,
 ) {
-    std::mem::swap(
+    core::mem::swap(
         change_list,
         &mut atlas.resize_and_rearrange(transmute(new_size)),
     );
@@ -193,7 +198,7 @@ pub unsafe extern "C" fn guillotiere_change_list_new() -> *mut guillotiere_chang
 pub unsafe extern "C" fn guillotiere_change_list_delete(
     change_list: *mut guillotiere_change_list_t,
 ) {
-    Box::from_raw(change_list);
+    let _ = Box::from_raw(change_list);
 }
 
 #[no_mangle]
@@ -239,7 +244,7 @@ pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_with_options(
 pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_delete(
     atlas: *mut guillotiere_simple_atlas_allocator_t,
 ) {
-    Box::from_raw(atlas);
+    let _ = Box::from_raw(atlas);
 }
 
 #[no_mangle]

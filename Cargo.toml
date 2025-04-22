@@ -10,13 +10,15 @@ documentation = "https://docs.rs/guillotiere/"
 keywords = ["2d", "graphics"]
 
 [features]
+default = ["std"]
+std = ["euclid/std", "serde?/std"]
 checks = []
 serialization = ["serde", "euclid/serde"]
 
 [dependencies]
-euclid = "0.22.0"
-serde = { version = "1.0", optional = true, features = ["serde_derive"] }
-svg_fmt = "0.4.1"
+euclid = { version = "0.22.11", default-features = false, features = ["libm"] }
+serde = { version = "1.0", optional = true, default-features = false, features = ["derive"] }
+svg_fmt = "0.4.5"
 
 [workspace]
 members = ["cli", "ffi"]

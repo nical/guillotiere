@@ -469,7 +469,7 @@ fn svg(args: &ArgMatches) {
     let svg_file_name = args.value_of("SVG_OUTPUT").unwrap_or("atlas.svg");
     let mut svg_file = File::create(svg_file_name).expect("Failed to open the SVG file.");
 
-    guillotiere::dump_svg(&session.atlas, &mut svg_file)
+    write!(&mut svg_file, "{}", session.atlas.dump_svg())
         .expect("Failed to write into the SVG file.");
 }
 
