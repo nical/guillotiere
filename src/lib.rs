@@ -1,3 +1,9 @@
+// Disable stdlib if the feature isn't enabled.
+// If we're in `cargo test`, enable stdlib anyway.
+#![cfg_attr(all(not(test), not(feature = "std")), no_std)]
+extern crate core;
+extern crate alloc;
+
 #[cfg(feature = "serialization")]
 #[macro_use]
 pub extern crate serde;
