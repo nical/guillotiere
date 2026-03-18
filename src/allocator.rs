@@ -1,7 +1,12 @@
+#[cfg(test)]
+extern crate std;
+
+use alloc::vec;
+use alloc::vec::Vec;
 use crate::{Rectangle, Size};
 use euclid::{vec2, point2, size2};
 
-use std::num::Wrapping;
+use core::num::Wrapping;
 
 const LARGE_BUCKET: usize = 2;
 const MEDIUM_BUCKET: usize = 1;
@@ -22,7 +27,7 @@ fn free_list_for_size(small_threshold: i32, large_threshold: i32, size: &Size) -
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct AllocIndex(u32);
 impl AllocIndex {
-    const NONE: AllocIndex = AllocIndex(std::u32::MAX);
+    const NONE: AllocIndex = AllocIndex(u32::MAX);
 
     fn index(self) -> usize {
         self.0 as usize
@@ -452,9 +457,6 @@ impl AtlasAllocator {
         let chosen_id = self.find_suitable_rect(&requested_size);
 
         if chosen_id.is_none() {
-            //println!("failed to allocate {:?}", requested_size);
-            //self.print_free_rects();
-
             // No suitable free rect!
             return None;
         }
@@ -477,7 +479,6 @@ impl AtlasAllocator {
         let split_id;
         let leftover_id;
 
-        //println!("{:?} -> {:?}", current_orientation, orientation);
         if orientation == current_orientation {
             if !split_rect.is_empty() {
                 let next_sibling = chosen_node.next_sibling;
@@ -608,9 +609,6 @@ impl AtlasAllocator {
         if leftover_id.is_some() {
             self.add_free_rect(leftover_id, &leftover_rect.size());
         }
-
-        //println!("allocated {:?}     split: {:?} leftover: {:?}", allocated_rect, split_rect, leftover_rect);
-        //self.print_free_rects();
 
         #[cfg(feature = "checks")]
         self.check_tree();
@@ -933,7 +931,7 @@ impl AtlasAllocator {
 
         let use_worst_fit = ideal_bucket == LARGE_BUCKET;
         for bucket in ideal_bucket..NUM_BUCKETS {
-            let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
+            let mut candidate_score = if use_worst_fit { 0 } else { i32::MAX };
             let mut candidate = None;
 
             let mut freelist_idx = 0;
@@ -1012,28 +1010,6 @@ impl AtlasAllocator {
         self.nodes[id.index()].kind = NodeKind::Unused;
         self.nodes[id.index()].next_sibling = self.unused_nodes;
         self.unused_nodes = id;
-    }
-
-    #[allow(dead_code)]
-    fn print_free_rects(&self) {
-        println!("Large:");
-        for &id in &self.free_lists[LARGE_BUCKET] {
-            if self.nodes[id.index()].kind == NodeKind::Free {
-                println!(" - {:?} #{:?}", self.nodes[id.index()].rect, id);
-            }
-        }
-        println!("Medium:");
-        for &id in &self.free_lists[MEDIUM_BUCKET] {
-            if self.nodes[id.index()].kind == NodeKind::Free {
-                println!(" - {:?} #{:?}", self.nodes[id.index()].rect, id);
-            }
-        }
-        println!("Small:");
-        for &id in &self.free_lists[SMALL_BUCKET] {
-            if self.nodes[id.index()].kind == NodeKind::Free {
-                println!(" - {:?} #{:?}", self.nodes[id.index()].rect, id);
-            }
-        }
     }
 
     #[cfg(feature = "checks")]
@@ -1115,7 +1091,6 @@ impl AtlasAllocator {
     fn add_free_rect(&mut self, id: AllocIndex, size: &Size) {
         debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
         let bucket = free_list_for_size(self.small_size_threshold, self.large_size_threshold, size);
-        //println!("add free rect #{:?} size {} bucket {}", id, size, bucket);
         self.free_lists[bucket].push(id);
     }
 
@@ -1125,7 +1100,6 @@ impl AtlasAllocator {
         debug_assert_eq!(self.nodes[next.index()].kind, NodeKind::Free);
         let r1 = self.nodes[node.index()].rect;
         let r2 = self.nodes[next.index()].rect;
-        //println!("merge {} #{:?} and {} #{:?}       {:?}", r1, node, r2, next, orientation);
         let merge_size = self.nodes[next.index()].rect.size();
         match orientation {
             Orientation::Horizontal => {
@@ -1165,7 +1139,7 @@ impl AtlasAllocator {
     }
 }
 
-impl std::ops::Index<AllocId> for AtlasAllocator {
+impl core::ops::Index<AllocId> for AtlasAllocator {
     type Output = Rectangle;
     fn index(&self, index: AllocId) -> &Rectangle {
         let idx = self.get_index(index);
@@ -1270,7 +1244,7 @@ impl SimpleAtlasAllocator {
 
         let mut chosen_rect = None;
         for bucket in ideal_bucket..NUM_BUCKETS {
-            let mut candidate_score = if use_worst_fit { 0 } else { std::i32::MAX };
+            let mut candidate_score = if use_worst_fit { 0 } else { i32::MAX };
             let mut candidate = None;
 
             for (index, rect) in self.free_rects[bucket].iter().enumerate() {
@@ -1377,7 +1351,7 @@ fn adjust_size(alignment: i32, size: &mut i32) {
 
 /// Compute the area, saturating at i32::MAX instead of overflowing.
 fn safe_area(rect: &Rectangle) -> i32 {
-    rect.width().checked_mul(rect.height()).unwrap_or(std::i32::MAX)
+    rect.width().checked_mul(rect.height()).unwrap_or(i32::MAX)
 }
 
 fn guillotine_rect(
@@ -1490,6 +1464,7 @@ impl ChangeList {
 }
 
 /// Dump a visual representation of the atlas in SVG format.
+#[cfg(feature = "std")]
 pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std::io::Result<()> {
     use svg_fmt::*;
 
@@ -1511,6 +1486,7 @@ pub fn dump_svg(atlas: &AtlasAllocator, output: &mut dyn std::io::Write) -> std:
 /// SVG document, so that it can be included in a larger document.
 ///
 /// If a rectangle is provided, translate and scale the output to fit it.
+#[cfg(feature = "std")]
 pub fn dump_into_svg(atlas: &AtlasAllocator, rect: Option<&Rectangle>, output: &mut dyn std::io::Write) -> std::io::Result<()> {
     use svg_fmt::*;
 
@@ -1632,8 +1608,8 @@ fn atlas_random_test() {
         atlas.deallocate(id);
     }
 
-    println!("added/removed {} rectangles, {} misses", n, misses);
-    println!(
+    std::println!("added/removed {} rectangles, {} misses", n, misses);
+    std::println!(
         "nodes.cap: {}, free_list.cap: {}/{}/{}",
         atlas.nodes.capacity(),
         atlas.free_lists[LARGE_BUCKET].capacity(),
