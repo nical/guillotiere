@@ -781,6 +781,8 @@ impl AtlasAllocator {
         let root = &mut self.nodes[self.root_node.index()];
         if root.kind == NodeKind::Free && root.rect.size() == old_size {
             root.rect.max = root.rect.min + new_size.to_vector();
+            // The node's size changed, move it to the correct free list bucket.
+            self.update_free_list_bucket(self.root_node);
             return;
         }
 
@@ -803,6 +805,8 @@ impl AtlasAllocator {
                     Orientation::Horizontal => vec2(dx, 0),
                     Orientation::Vertical => vec2(0, dy),
                 };
+                // The node's size changed, move it to the correct free list bucket.
+                self.update_free_list_bucket(sibling);
             } else {
                 let rect = match root_orientation {
                     Orientation::Horizontal => {
@@ -1092,6 +1096,23 @@ impl AtlasAllocator {
         debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
         let bucket = free_list_for_size(self.small_size_threshold, self.large_size_threshold, size);
         self.free_lists[bucket].push(id);
+    }
+
+    /// Remove a free node from its current bucket (if present) and re-add it to the
+    /// bucket that matches its current size. Used when a free node is resized in-place.
+    fn update_free_list_bucket(&mut self, id: AllocIndex) {
+        debug_assert_eq!(self.nodes[id.index()].kind, NodeKind::Free);
+
+        // Remove from whichever bucket currently holds this id.
+        for bucket in 0..NUM_BUCKETS {
+            if let Some(pos) = self.free_lists[bucket].iter().position(|&i| i == id) {
+                self.free_lists[bucket].swap_remove(pos);
+                break;
+            }
+        }
+
+        let size = self.nodes[id.index()].rect.size();
+        self.add_free_rect(id, &size);
     }
 
     // Merge `next` into `node` and append `next` to a list of available `nodes`vector slots.
@@ -1727,4 +1748,59 @@ fn issue_25() {
     allocator.allocate(Size::new(2,2));
     allocator.allocate(Size::new(65500,2));
     allocator.allocate(Size::new(2, 65500));
+}
+
+#[test]
+fn grow_free_list_bucket() {
+    // Regression test: growing a free node in-place must move it to the correct
+    // free list bucket, otherwise allocations searching a higher bucket won't find it.
+
+    let mut atlas = AtlasAllocator::with_options(
+        size2(100, 100),
+        &AllocatorOptions {
+            small_size_threshold: 32,
+            large_size_threshold: 256,
+            ..DEFAULT_OPTIONS
+        },
+    );
+
+    // Allocate most of the atlas, leaving a thin free strip along the bottom.
+    // The strip's min dimension (10) is below small_size_threshold (32), so it
+    // lands in the SMALL_BUCKET.
+    let a = atlas.allocate(size2(100, 90)).unwrap().id;
+
+    // Grow the atlas so that the free strip extends from 10 to 1010 pixels tall.
+    // Its min dimension is now 100 (>= small_threshold), so it should move out of
+    // SMALL_BUCKET. Before the fix it stayed in SMALL_BUCKET and large allocations
+    // could not find it.
+    atlas.grow(size2(100, 1100));
+
+    // This allocation needs a rect of 100x500. The ideal bucket is LARGE_BUCKET
+    // (500 >= 256). Without the bucket fix the 100x1010 free strip would still be
+    // in SMALL_BUCKET and this allocation would fail.
+    assert!(
+        atlas.allocate(size2(100, 500)).is_some(),
+        "Should find the grown free strip in the correct bucket"
+    );
+
+    atlas.deallocate(a);
+
+    // Also test the single-root early-return path in grow().
+    let mut atlas2 = AtlasAllocator::with_options(
+        size2(20, 20),
+        &AllocatorOptions {
+            small_size_threshold: 32,
+            large_size_threshold: 256,
+            ..DEFAULT_OPTIONS
+        },
+    );
+    // Atlas is a single free root node in SMALL_BUCKET (20 < 32).
+    // Grow it past the large threshold.
+    atlas2.grow(size2(512, 512));
+
+    // Allocate something that searches LARGE_BUCKET.
+    assert!(
+        atlas2.allocate(size2(500, 500)).is_some(),
+        "Single-root grow should update the free list bucket"
+    );
 }
