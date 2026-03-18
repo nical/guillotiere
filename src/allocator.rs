@@ -656,11 +656,10 @@ impl AtlasAllocator {
             {
                 debug_assert_eq!(self.nodes[parent.index()].kind, NodeKind::Container);
 
-                self.mark_node_unused(node_id);
-
                 // Replace the parent container with a free node.
                 self.nodes[parent.index()].rect = self.nodes[node_id.index()].rect;
                 self.nodes[parent.index()].kind = NodeKind::Free;
+                self.mark_node_unused(node_id);
 
                 // Start again at the parent level.
                 node_id = parent;
