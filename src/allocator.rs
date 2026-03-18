@@ -1330,10 +1330,13 @@ impl SimpleAtlasAllocator {
     /// Initialize this simple allocator with the content of an atlas allocator.
     pub fn init_from_allocator(&mut self, src: &AtlasAllocator) {
         self.size = src.size;
+        self.alignment = src.alignment;
         self.small_size_threshold = src.small_size_threshold;
         self.large_size_threshold = src.large_size_threshold;
 
         for bucket in 0..NUM_BUCKETS {
+            self.free_rects[bucket].clear();
+
             for id in src.free_lists[bucket].iter() {
                 // During tree simplification we don't remove merged nodes from the free list, so we have
                 // to handle it here.
