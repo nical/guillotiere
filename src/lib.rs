@@ -1,7 +1,15 @@
+#![allow(mismatched_lifetime_syntaxes)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
+
 #[cfg(feature = "serialization")]
 #[macro_use]
 pub extern crate serde;
 pub extern crate euclid;
+
+#[cfg(test)]
+extern crate std;
 
 mod allocator;
 //pub mod recording;
