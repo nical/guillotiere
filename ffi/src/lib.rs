@@ -8,14 +8,12 @@ use guillotiere::ChangeList as guillotiere_change_list_t;
 use guillotiere::SimpleAtlasAllocator as guillotiere_simple_atlas_allocator_t;
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_size_t {
     pub width: i32,
     pub height: i32,
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_rectangle_t {
     pub min_x: i32,
     pub min_y: i32,
@@ -24,41 +22,35 @@ pub struct guillotiere_rectangle_t {
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_change_t {
     pub old_alloc: guillotiere_allocation_t,
     pub new_alloc: guillotiere_allocation_t,
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_changes_t {
     pub changes: *const guillotiere_change_t,
     pub count: usize,
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_failures_t {
     pub failures: *const guillotiere_allocation_t,
     pub count: usize,
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_alloc_id_t {
     id: u32,
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_allocation_t {
     pub id: guillotiere_alloc_id_t,
     pub rectangle: guillotiere_rectangle_t,
 }
 
 #[repr(C)]
-#[no_mangle]
 pub struct guillotiere_allocator_options_t {
     pub width_alignment: i32,
     pub height_alignment: i32,
@@ -97,7 +89,7 @@ pub unsafe extern "C" fn guillotiere_atlas_allocator_with_options(
 pub unsafe extern "C" fn guillotiere_atlas_allocator_delete(
     atlas: *mut guillotiere_atlas_allocator_t,
 ) {
-    Box::from_raw(atlas);
+    let _ = Box::from_raw(atlas);
 }
 
 #[no_mangle]
@@ -193,7 +185,7 @@ pub unsafe extern "C" fn guillotiere_change_list_new() -> *mut guillotiere_chang
 pub unsafe extern "C" fn guillotiere_change_list_delete(
     change_list: *mut guillotiere_change_list_t,
 ) {
-    Box::from_raw(change_list);
+    let _ = Box::from_raw(change_list);
 }
 
 #[no_mangle]
@@ -239,7 +231,7 @@ pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_with_options(
 pub unsafe extern "C" fn guillotiere_simple_atlas_allocator_delete(
     atlas: *mut guillotiere_simple_atlas_allocator_t,
 ) {
-    Box::from_raw(atlas);
+    let _ = Box::from_raw(atlas);
 }
 
 #[no_mangle]
